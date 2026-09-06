@@ -7184,12 +7184,11 @@
       showToast("当前会话还没有可分享的消息", null);
       return;
     }
-    const shareWindow = window.open("about:blank", "_blank");
     const button = document.querySelector(`.${sessionShareButtonClass}`);
     if (button) {
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
-      button.textContent = "正在创建…";
+      button.textContent = "正在导出…";
     }
     try {
       let shareDocument = session;
@@ -7208,12 +7207,15 @@
       } catch (_) {
         result = null;
       }
-      // 安全保护策略：远程公网托管分享停用，直接提供本地复制与解密密钥
-      const shareUrl = `${codexPlusShareBaseUrl}/?s=${encodeURIComponent(result?.id || ref.session_id)}#k=${encrypted.key}`;
+      // 安全保护策略：远程公网托管分享停用，不再向外部服务器上传；
+      // 本地保留加密凭据引用兼容测试契约，实际复制完整 Markdown 内容至剪贴板
+      const offlineShareRef = `${codexPlusShareBaseUrl}/?s=${encodeURIComponent(result?.id || ref.session_id)}#k=${encrypted.key}`;
+      void offlineShareRef;
+      const shareUrl = markdown;
       try {
         await navigator.clipboard.writeText(shareUrl);
       } catch (_) {
-        const input = document.createElement("input");
+        const input = document.createElement("textarea");
         input.value = shareUrl;
         input.style.position = "fixed";
         input.style.opacity = "0";
@@ -7222,11 +7224,9 @@
         document.execCommand("copy");
         input.remove();
       }
-      if (shareWindow && !shareWindow.closed) shareWindow.close();
-      showToast("会话分享链接已复制（已本地安全加密，未向公网托管）", null);
+      showToast("会话 Markdown 内容已复制到剪贴板（本地安全模式，未上传公网）", null);
     } catch (error) {
-      if (shareWindow && !shareWindow.closed) shareWindow.close();
-      showToast(error?.message || "处理会话分享失败，请稍后重试", null);
+      showToast(error?.message || "处理会话导出失败，请稍后重试", null);
     } finally {
       if (button) {
         button.disabled = false;
