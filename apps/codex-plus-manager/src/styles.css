@@ -8066,3 +8066,211 @@ select {
     white-space: nowrap;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────
+   UX-001: 统一视觉与组件规范体系收敛
+   规范按钮、卡片、Badge、输入框、深浅色主题无文字截断与一致性
+   ────────────────────────────────────────────────────────────── */
+
+/* 1. 通用按钮规范体系 (.btn, .btn-primary, .btn-secondary, .btn-danger, .btn-ghost) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn:disabled {
+  pointer-events: none;
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.btn-primary {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: transparent;
+  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.28), inset 0 1px 0 hsl(0 0% 100% / 0.14);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: hsl(var(--primary) / 0.9);
+}
+
+.btn-secondary {
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+  border-color: hsl(var(--border) / 0.7);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: hsl(var(--secondary) / 0.7);
+  border-color: hsl(var(--border));
+}
+
+.btn-danger {
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  border-color: transparent;
+  box-shadow: 0 1px 2px hsl(var(--shadow-color) / 0.28);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: hsl(var(--destructive) / 0.9);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: hsl(var(--accent) / 0.7);
+  color: hsl(var(--accent-foreground));
+}
+
+.btn-sm {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-icon {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+/* 2. 统一 Badge 规范 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.badge-default {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.badge-secondary {
+  border-color: hsl(var(--border) / 0.6);
+  background: hsl(var(--surface-raised));
+  color: hsl(var(--secondary-foreground));
+}
+
+.badge-success {
+  border-color: hsl(var(--status-success) / 0.3);
+  background: hsl(var(--status-success) / 0.12);
+  color: hsl(var(--status-success));
+}
+
+.badge-warning {
+  border-color: hsl(var(--status-warning) / 0.35);
+  background: hsl(var(--status-warning) / 0.12);
+  color: hsl(var(--status-warning));
+}
+
+.badge-danger {
+  border-color: hsl(var(--status-error) / 0.3);
+  background: hsl(var(--status-error) / 0.12);
+  color: hsl(var(--status-error));
+}
+
+/* 3. 浅色主题高对比度与防发灰收敛 */
+.light .text-muted-foreground {
+  color: hsl(224 16% 38%);
+}
+
+.light .btn-secondary {
+  background: hsl(224 24% 94%);
+  color: hsl(226 26% 16%);
+  border-color: hsl(224 18% 85%);
+}
+
+.light .badge-secondary {
+  background: hsl(224 24% 93%);
+  color: hsl(226 26% 18%);
+  border-color: hsl(224 18% 84%);
+}
+
+/* 4. 窄视口文字截断弹性兜底与排版保护 */
+.panel-head,
+.card-header,
+.screen,
+.form-row,
+.relay-summary,
+.session-summary {
+  min-width: 0;
+}
+
+.panel-head h3,
+.card-title,
+.hero-layout h2,
+.section-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 860px) {
+  .topbar {
+    padding: 10px 14px;
+    min-height: 56px;
+  }
+
+  .topbar h1 {
+    font-size: 17px;
+  }
+
+  .screen {
+    padding: 12px 14px 20px;
+    gap: 10px;
+  }
+
+  .toolbar {
+    gap: 6px;
+  }
+
+  .btn {
+    white-space: normal;
+    text-align: center;
+    word-break: break-word;
+  }
+}
+
