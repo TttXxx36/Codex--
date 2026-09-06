@@ -92,23 +92,26 @@ graph TD
 
 ---
 
-### 【任务 01-C】CI/CD 自动化构建流精简（Windows 专属构建）（已完成 ✅）
+### 【任务 01-C】CI/CD 构建流架构重构：默认 Windows 发布流与全平台通用流分离（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
-  - 针对目前没有 macOS 测试环境的实际情况，对 GitHub Actions 工作流进行精简；
-  - 移除 `release-assets.yml` 与 `pr-build.yml` 中的 macOS 构建矩阵（x64 / arm64）；
-  - 以后发布新 Release 或 PR 构建时默认只构建 Windows 端产物（安装包 `.exe`、便携包 `.zip` 与 `latest.json`），大幅提升 CI 速度并节省 Runner 算力。
+  - 针对目前开发环境主要在 Windows、缺乏 macOS 本地测试环境的现状，重构 GitHub Actions 构建流架构；
+  - 保留完整的全平台构建流（Windows + macOS Intel/Apple Silicon）作为通用工作流，支持在必要时手动触发或指定 Tag 构建；
+  - 新建并设定默认的 Windows 专用发布工作流，在日常直接发布 Release 时默认仅执行 Windows 端打包；
+  - 恢复 `pr-build.yml` 的通用检查能力。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  1. **Release 工作流精简 (`.github/workflows/release-assets.yml`)**：
-     - 移除 `macos-dmg` 矩阵作业；
-     - 将 `latest-json` 作业前置依赖收敛为仅依赖 `windows-installer`，确保生成准确的静态更新索引；
-  2. **PR 构建工作流精简 (`.github/workflows/pr-build.yml`)**：
-     - 移除 `macos-dmg` 作业，构建验证全面专注 Windows 桌面端。
+  1. **默认 Windows 专属发布流 (`.github/workflows/release-assets-windows.yml`)**：
+     - 作为默认的 `release: [published]` 触发流，仅包含 `windows-installer` 和 `latest-json`，大幅缩短常规发布耗时；
+  2. **恢复全平台通用发布流 (`.github/workflows/release-assets-all.yml`)**：
+     - 完整保留原有 Windows + macOS 跨平台构建矩阵与 DMG 打包逻辑；
+     - 配置为支持 `workflow_dispatch` 手动输入 Tag 触发，以后在需要 macOS 产物时随时手动或按需执行全量打包；
+  3. **恢复 PR 检查工作流 (`.github/workflows/pr-build.yml`)**：
+     - 保持原有完整的 PR 构建覆盖。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - **构建耗时骤降**：免除多个 macOS Runner 的排队与长达数分钟的交叉编译时间；
-  - **发布流程轻量可靠**：新 Release 自动仅触发 Windows 产物构建与发布，产物结构干净稳定。
+  - **默认发布飞速**：日常发布新 Release 仅跑 Windows 流，无需等待 macOS 机器排队，几分钟即可产出 `.exe`、`.zip` 与静态更新索引；
+  - **按需跨平台无缝兼顾**：需要 macOS 产物时，直接在 Actions 面板手动触发全平台流即可，两种构建环节互不干扰。
 
 ---
 
