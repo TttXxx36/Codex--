@@ -136,6 +136,7 @@ import {
 } from "./dream-skin";
 import { getLanguage, t, tf, toggleLanguage } from "@/i18n";
 import { vlmTestTranslation } from "./vlm-test-translation";
+import { formatSanitizedDiagnosticReport, parseDiagnosticLogEntries } from "./request-diagnostics";
 
 const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
 const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
@@ -3219,6 +3220,8 @@ export function App() {
       showMessage: async (title: string, message: string, status?: Status) => showNotice(title, message, status),
       copyLogs: () => copyText(logs?.text ?? "", t("日志已复制。")),
       copyDiagnostics: () => copyText(diagnostics?.report ?? "", t("诊断报告已复制。")),
+      copyDiagnosticsReport: (text: string) => copyText(text, t("脱敏诊断已复制。")),
+      navigate: (target: Route) => void navigate(target),
       goLogs: () => navigate("about"),
       checkHealth: async () => {
         await refreshOverview(true);
@@ -3620,6 +3623,8 @@ type Actions = {
   showMessage: (title: string, message: string, status?: Status) => Promise<void>;
   copyLogs: () => Promise<void>;
   copyDiagnostics: () => Promise<void>;
+  copyDiagnosticsReport: (text: string) => Promise<void>;
+  navigate: (target: Route) => void;
   goLogs: () => Promise<void>;
   installWatcher: () => Promise<void>;
   uninstallWatcher: () => Promise<void>;
@@ -6276,7 +6281,7 @@ const AboutScreen = memo(function AboutScreen({
         </CardContent>
       </Panel>
       <LogsPanel logs={logs} actions={actions} />
-      <DiagnosticsPanel diagnostics={diagnostics} actions={actions} />
+      <DiagnosticsPanel diagnostics={diagnostics} logs={logs} actions={actions} />
     </>
   );
 });
@@ -6559,18 +6564,180 @@ function LogsPanel({ logs, actions }: { logs: LogsResult | null; actions: Action
   );
 }
 
-function DiagnosticsPanel({ diagnostics, actions }: { diagnostics: DiagnosticsResult | null; actions: Actions }) {
+function DiagnosticsPanel({
+  diagnostics,
+  logs,
+  actions,
+}: {
+  diagnostics: DiagnosticsResult | null;
+  logs: LogsResult | null;
+  actions: Actions;
+}) {
+  const [tab, setTab] = useState<"requests" | "report">("requests");
+  const [filterErrorOnly, setFilterErrorOnly] = useState(false);
+
+  const requestItems = useMemo(() => {
+    return parseDiagnosticLogEntries(logs?.text ?? "", 20);
+  }, [logs?.text]);
+
+  const displayedItems = useMemo(() => {
+    if (!filterErrorOnly) return requestItems;
+    return requestItems.filter((item) => item.isError);
+  }, [requestItems, filterErrorOnly]);
+
+  const errorCount = useMemo(() => {
+    return requestItems.filter((item) => item.isError).length;
+  }, [requestItems]);
+
+  const copySanitized = () => {
+    const report = formatSanitizedDiagnosticReport(requestItems);
+    void actions.copyDiagnosticsReport(report);
+  };
+
   return (
     <Panel>
-      <CardHead title={t("诊断报告")} detail={t("包含版本、路径、设置和平台信息")} />
-      <CardContent>
-        <Textarea className="log-view tall" readOnly value={diagnostics?.report ?? t("尚未生成诊断报告。")} />
-        <Toolbar>
-          <Button onClick={() => void actions.refreshDiagnostics()}>{t("重新生成")}</Button>
-          <Button variant="secondary" onClick={() => void actions.copyDiagnostics()}>
-            {t("复制报告")}
+      <div className="flex items-center justify-between border-b pb-3 mb-3">
+        <div>
+          <CardTitle className="text-base font-medium">{t("请求诊断看板与系统报告")}</CardTitle>
+          <CardDescription className="text-xs text-muted-foreground mt-1">
+            {t("最近 20 次请求/错误脱敏监视器与一键排查引导，100% 本地脱敏运行")}
+          </CardDescription>
+        </div>
+        <div className="flex gap-1 bg-muted/40 p-1 rounded-md">
+          <Button
+            size="sm"
+            variant={tab === "requests" ? "secondary" : "ghost"}
+            onClick={() => setTab("requests")}
+          >
+            {t("请求与错误看板")}
+            {errorCount > 0 ? (
+              <UiBadge className="ml-1 px-1.5 py-0 text-xs" variant="destructive">
+                {errorCount}
+              </UiBadge>
+            ) : null}
           </Button>
-        </Toolbar>
+          <Button
+            size="sm"
+            variant={tab === "report" ? "secondary" : "ghost"}
+            onClick={() => setTab("report")}
+          >
+            {t("系统诊断报告")}
+          </Button>
+        </div>
+      </div>
+
+      <CardContent className="space-y-4">
+        {tab === "requests" ? (
+          <div>
+            <div className="flex items-center justify-between pb-2 mb-2">
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={!filterErrorOnly ? "secondary" : "outline"}
+                  onClick={() => setFilterErrorOnly(false)}
+                >
+                  {tf("全部 ({0})", [requestItems.length])}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterErrorOnly ? "secondary" : "outline"}
+                  onClick={() => setFilterErrorOnly(true)}
+                >
+                  {tf("仅看异常 ({0})", [errorCount])}
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={copySanitized}>
+                  <Copy className="h-3.5 w-3.5 mr-1" />
+                  {t("复制脱敏诊断")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void actions.refreshLogs()}>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  {t("刷新")}
+                </Button>
+              </div>
+            </div>
+
+            {displayedItems.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-md">
+                {t("暂无近期 API 代理请求或错误记录（离线状态下不产生网络请求）")}
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                {displayedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-md border text-sm transition-colors ${
+                      item.isError ? "border-destructive/40 bg-destructive/5" : "border-border/60 bg-card"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <UiBadge
+                          variant={item.isError ? "destructive" : "secondary"}
+                          className="font-mono text-xs"
+                        >
+                          {item.statusCode ? `HTTP ${item.statusCode}` : item.isError ? "FAIL" : "OK"}
+                        </UiBadge>
+                        <span className="font-semibold text-foreground">{item.relayName}</span>
+                        {item.wireApi ? (
+                          <UiBadge variant="outline" className="text-xs">
+                            {item.wireApi}
+                          </UiBadge>
+                        ) : null}
+                      </div>
+                      <span className="text-xs font-mono text-muted-foreground">{item.timeLabel}</span>
+                    </div>
+
+                    <div className="text-xs font-mono text-muted-foreground truncate mb-1" title={item.endpoint}>
+                      {item.endpoint || item.event}
+                    </div>
+
+                    <div className="flex items-start justify-between gap-2 mt-2 pt-2 border-t border-border/40">
+                      <div>
+                        <div className="text-xs font-medium text-foreground">{item.errorClassLabel}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{item.statusDescription}</div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.remedyTargetRoute === "relay" ? (
+                          <Button size="sm" variant="outline" onClick={() => actions.navigate("relay")}>
+                            {t("供应商设置")}
+                          </Button>
+                        ) : null}
+                        {item.remedyTargetRoute === "settings" ? (
+                          <Button size="sm" variant="outline" onClick={() => actions.navigate("settings")}>
+                            {t("通用设置")}
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title={t("复制此条脱敏详情")}
+                          onClick={() =>
+                            void actions.copyDiagnosticsReport(JSON.stringify(item.sanitizedDetail, null, 2))
+                          }
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <Textarea className="log-view tall" readOnly value={diagnostics?.report ?? t("尚未生成诊断报告。")} />
+            <Toolbar className="mt-3">
+              <Button onClick={() => void actions.refreshDiagnostics()}>{t("重新生成")}</Button>
+              <Button variant="secondary" onClick={() => void actions.copyDiagnostics()}>
+                {t("复制报告")}
+              </Button>
+            </Toolbar>
+          </div>
+        )}
       </CardContent>
     </Panel>
   );
