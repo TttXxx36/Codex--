@@ -21,6 +21,7 @@ use crate::status::{LaunchStatus, StatusStore};
 
 static PET_OVERLAY_SYNC_FAILED: AtomicBool = AtomicBool::new(false);
 static PET_CURSOR_DRIVER_FAILED: AtomicBool = AtomicBool::new(false);
+static HELPER_GRACEFUL_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 const MACOS_DEBUG_TAKEOVER_WAIT_MS: u64 = 5_000;
 const MACOS_DEBUG_TAKEOVER_INTERVAL_MS: u64 = 100;
 
@@ -273,7 +274,7 @@ pub async fn launch_and_inject(options: LaunchOptions) -> anyhow::Result<LaunchH
 
 /// 判断错误链里是不是「端口已被占用」。只有这一种失败值得等前任让位重试，
 /// 其余（权限不足、地址非法等）重试多少次都一样，直接冒泡更快也更好排查。
-fn error_is_address_in_use(error: &anyhow::Error) -> bool {
+pub fn error_is_address_in_use(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause
             .downcast_ref::<std::io::Error>()
@@ -281,7 +282,7 @@ fn error_is_address_in_use(error: &anyhow::Error) -> bool {
     })
 }
 
-/// 端口被占用时按 `interval_ms` 重试启动 helper，直到成功或超过 `timeout_ms`。
+/// 端口被占用时向可能残留的前任进程发送优雅停机请求，并按动态退避重试启动 helper，直到成功或超过 `timeout_ms`。
 async fn start_helper_waiting_for_busy_port<F, Fut>(
     mut start: F,
     timeout_ms: u64,
@@ -293,6 +294,7 @@ where
 {
     let mut waited_ms = 0;
     let mut attempts = 0;
+    let mut current_interval = interval_ms.max(50);
     loop {
         attempts += 1;
         let error = match start().await {
@@ -313,8 +315,23 @@ where
         if !error_is_address_in_use(&error) || waited_ms >= timeout_ms {
             return Err(error);
         }
-        tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
-        waited_ms += interval_ms;
+        if attempts == 1 {
+            let bind_host = helper_bind_host();
+            tokio::spawn(async move {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_millis(600))
+                    .build();
+                if let Ok(client) = client {
+                    let _ = client
+                        .post(format!("http://{bind_host}:57321/helper/shutdown"))
+                        .send()
+                        .await;
+                }
+            });
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(current_interval)).await;
+        waited_ms += current_interval;
+        current_interval = (current_interval * 3 / 2).min(500);
     }
 }
 
@@ -761,12 +778,23 @@ impl LaunchHooks for DefaultLaunchHooks {
     }
 
     async fn start_helper(&self, helper_port: u16) -> anyhow::Result<()> {
+        HELPER_GRACEFUL_SHUTDOWN.store(false, Ordering::Relaxed);
         let bind_host = helper_bind_host();
-        let listener = tokio::net::TcpListener::bind((bind_host.as_str(), helper_port))
-            .await
-            .with_context(|| {
-                format!("failed to bind helper runtime on {bind_host}:{helper_port}")
-            })?;
+        let socket_addr: SocketAddr = format!("{bind_host}:{helper_port}").parse().with_context(|| {
+            format!("invalid helper bind socket address {bind_host}:{helper_port}")
+        })?;
+        let socket = if socket_addr.is_ipv4() {
+            tokio::net::TcpSocket::new_v4()?
+        } else {
+            tokio::net::TcpSocket::new_v6()?
+        };
+        let _ = socket.set_reuseaddr(true);
+        socket.bind(socket_addr).with_context(|| {
+            format!("failed to bind helper runtime on {bind_host}:{helper_port}")
+        })?;
+        let listener = socket.listen(1024).with_context(|| {
+            format!("failed to listen on helper socket {bind_host}:{helper_port}")
+        })?;
         let _ = crate::diagnostic_log::append_diagnostic_log(
             "helper.listening",
             serde_json::json!({
@@ -780,6 +808,13 @@ impl LaunchHooks for DefaultLaunchHooks {
             loop {
                 tokio::select! {
                     _ = &mut shutdown_rx => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(200)), if HELPER_GRACEFUL_SHUTDOWN.load(Ordering::Relaxed) => {
+                        let _ = crate::diagnostic_log::append_diagnostic_log(
+                            "helper.graceful_shutdown_triggered",
+                            serde_json::json!({ "helper_port": helper_port }),
+                        );
+                        break;
+                    }
                     accepted = listener.accept() => {
                         if let Ok((stream, addr)) = accepted {
                             tokio::spawn(async move {
@@ -1287,6 +1322,32 @@ async fn handle_helper_connection(
             )
         } else {
             dream_skin_image_response()
+        }
+    } else if (path == "/helper/shutdown" || path == "/shutdown")
+        && matches!(method, "POST" | "OPTIONS")
+    {
+        let is_loopback = remote_addr.map_or(false, |addr| addr.ip().is_loopback());
+        if !is_loopback {
+            (
+                "403 Forbidden".to_string(),
+                serde_json::to_vec(&serde_json::json!({
+                    "status": "forbidden",
+                    "message": "仅允许本地回环调用停机接口"
+                }))?,
+                "application/json; charset=utf-8".to_string(),
+                "helper.shutdown_forbidden",
+            )
+        } else {
+            HELPER_GRACEFUL_SHUTDOWN.store(true, Ordering::Relaxed);
+            (
+                "200 OK".to_string(),
+                serde_json::to_vec(&serde_json::json!({
+                    "status": "ok",
+                    "message": "helper 已收到优雅停机信号"
+                }))?,
+                "application/json; charset=utf-8".to_string(),
+                "helper.shutdown_signaled",
+            )
         }
     } else {
         (

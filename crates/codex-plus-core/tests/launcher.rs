@@ -34,6 +34,17 @@ fn browser_identity_change_requires_two_distinct_observations() {
 }
 
 #[test]
+fn error_is_address_in_use_detects_addrinuse_properly() {
+    let in_use = std::io::Error::new(std::io::ErrorKind::AddrInUse, "address already in use");
+    let err: anyhow::Error = in_use.into();
+    assert!(codex_plus_core::launcher::error_is_address_in_use(&err));
+
+    let perm_denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+    let err2: anyhow::Error = perm_denied.into();
+    assert!(!codex_plus_core::launcher::error_is_address_in_use(&err2));
+}
+
+#[test]
 fn app_paths_find_latest_windows_package_prefers_highest_version_app_dir() {
     let temp = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(temp.path().join("OpenAI.Codex_1.2.3.0_x64__abc/app")).unwrap();
