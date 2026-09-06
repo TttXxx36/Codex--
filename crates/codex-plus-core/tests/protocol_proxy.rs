@@ -2911,3 +2911,119 @@ fn empty_image_url_is_dropped_rather_than_forwarded() {
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[2]["role"], "tool");
 }
+
+#[test]
+fn glm_model_strips_data_url_prefix_from_image_urls() {
+    let converted = responses_to_chat_completions(json!({
+        "model": "glm-4v",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "Describe this image" },
+                    { "type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" }
+                ]
+            }
+        ]
+    }))
+    .unwrap();
+
+    let image = &converted["messages"][0]["content"][1];
+    assert_eq!(image["type"], "image_url");
+    // Prefix "data:image/png;base64," MUST be stripped for GLM:
+    assert_eq!(
+        image["image_url"]["url"],
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    );
+}
+
+#[test]
+fn non_glm_model_preserves_data_url_prefix() {
+    let converted = responses_to_chat_completions(json!({
+        "model": "gpt-4o",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "Describe this image" },
+                    { "type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" }
+                ]
+            }
+        ]
+    }))
+    .unwrap();
+
+    let image = &converted["messages"][0]["content"][1];
+    assert_eq!(image["type"], "image_url");
+    // Prefix MUST be preserved for non-GLM models:
+    assert_eq!(
+        image["image_url"]["url"],
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    );
+}
+
+#[test]
+fn glm_model_preserves_remote_image_url() {
+    let converted = responses_to_chat_completions(json!({
+        "model": "glm-4v",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": "Describe this remote image" },
+                    { "type": "input_image", "image_url": "https://example.com/photo.jpg" }
+                ]
+            }
+        ]
+    }))
+    .unwrap();
+
+    let image = &converted["messages"][0]["content"][1];
+    assert_eq!(image["type"], "image_url");
+    assert_eq!(image["image_url"]["url"], "https://example.com/photo.jpg");
+}
+
+#[test]
+fn chat_sse_preserves_call_id_when_final_chunk_has_empty_id() {
+    let converted = chat_sse_to_responses_sse(
+        r#"data: {"id":"chatcmpl_ds","model":"deepseek-chat","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_ds_12345","type":"function","function":{"name":"run_command"}}]}}]}
+
+data: {"id":"chatcmpl_ds","model":"deepseek-chat","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"cmd\":\"git status\"}"}}]}}]}
+
+data: {"id":"chatcmpl_ds","model":"deepseek-chat","choices":[{"delta":{"tool_calls":[{"index":0,"id":""}]},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+"#,
+    );
+    assert!(converted.contains("\"id\":\"fc_call_ds_12345\""));
+    assert!(converted.contains("\"call_id\":\"call_ds_12345\""));
+    assert!(!converted.contains("\"id\":\"fc_\""));
+    assert!(!converted.contains("\"call_id\":\"\""));
+    assert!(converted.contains("event: response.output_item.added"));
+    assert!(converted.contains("event: response.output_item.done"));
+    assert!(converted.contains("event: response.completed"));
+}
+
+#[test]
+fn model_capabilities_disables_tools_for_pure_completion_models() {
+    let converted = responses_to_chat_completions(json!({
+        "model": "o1-preview",
+        "input": "Hello",
+        "tools": [
+            {
+                "type": "function",
+                "name": "calc",
+                "description": "Calculate math"
+            }
+        ]
+    }))
+    .unwrap();
+
+    // Pure completion models should not have tools forwarded
+    assert!(converted.get("tools").is_none());
+}
+

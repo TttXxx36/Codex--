@@ -58,7 +58,7 @@ graph TD
 
     subgraph P1 阶段：协议兼容与注入韧性
         P1_1["✅ 任务 05 (BUG-006): 会话分享 UI/后端语义收敛为纯本地安全导出"]
-        P1_2["🛡️ 任务 06 (BUG-003): Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约"]
+        P1_2["✅ 任务 06 (BUG-003): Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约"]
         P1_3["🛡️ 任务 07 (BUG-004): 官方改版弹性选择器降级链 (Class->ARIA->语义)"]
         P1_4["🛡️ 任务 08 (BUG-005): 会话删除/撤回与索引文件事务一致性治理"]
         P1_5["🛡️ 任务 09 (BUG-007): Electron/CDP/Launcher 最小自动化回归测试"]
@@ -309,7 +309,7 @@ graph TD
 
 ---
 
-### 【任务 06 (P1 / BUG-003)】Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约（待推进 ⏳）
+### 【任务 06 (P1 / BUG-003)】Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - **解决核心痛点**：
@@ -320,8 +320,31 @@ graph TD
     - 建立供应商/模型 Capability 特性适配映射表；
     - 在 `protocol_proxy.rs` 中强化 SSE 状态机，保证 `call_id` 与 `turn_id` 全生命周期一致；
     - 对不支持 custom tool 的模型提供向标准 `function` 转换或安全降级的提示。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **构建 GLM 图片 Base64 前缀自动适配器 (`crates/codex-plus-core/src/protocol_proxy.rs`)**：
+     - 新增 `is_glm_model(model)`、`strip_data_url_prefix(url)` 与 `adapt_image_urls_for_model(&mut messages, model)`；
+     - 当下游模型属于智谱 GLM 体系（`glm*` / `zhipu*` / `bigmodel*` / `z.ai*`）时，自动剥离 `data:image/...;base64,` 前缀为纯 base64，消除智谱官方接口严格格式校验引发的 HTTP 400 错误；
+     - 严格约束非 GLM 模型（如 GPT-4o、Claude、DeepSeek、Qwen）及远端网络图片 URL（`http://`、`https://`）均 100% 保持原样不被误改写。
+  2. **固化 SSE 流式 Tool Call ID 全生命周期状态机 (`crates/codex-plus-core/src/protocol_proxy.rs`)**：
+     - 在 `push_tool_call_delta_into` 中修复 DeepSeek 终末分块发送空串 `id: ""` 导致抹除已生成 `state.call_id` 的重大缺陷（仅在 `!id.trim().is_empty()` 且未锁定时更新）；
+     - 重构 `tool_call_item_id` 与 `response_tool_call_item`，若 `call_id` 缺省自动分配确定的 `call_0` 安全回退，彻底消除空 ID 拼接产物 `fc_` 或 `ctc_` 裸前缀；
+     - 在 `push_tool_call_done_sse` 中直接绑定 `state.item_id`，保证 `response.output_item.added`、参数分块增量 `delta`、`response.output_item.done` 和 `response.completed` 四大事件的 `call_id` 与 `item_id` 逐字节严格对齐，彻底终结客户端死循环。
+  3. **建立模型 Capability 特性契约与敏感字段脱敏强化 (`crates/codex-plus-core/src/`)**：
+     - 定义 `ModelCapability` 结构与 `model_capabilities(model)` 探测器，支持按模型判定 `supports_tools`、`supports_vision` 与 `strip_image_data_url_prefix`；
+     - 对明确不支持 Function Calling 的纯补全模型（如 `o1-preview` 等）在转换层自动规避无效 `tools` 载荷转发；
+     - 在 `crates/codex-plus-core/src/diagnostic_log.rs` 中强化 `sanitize_string`，全面掩码 `sk-[A-Za-z0-9_-]{8,}` 与 `Bearer [REDACTED]`，敏感凭据绝不入日志。
+  4. **补充完整的协议契约测试套件 (`crates/codex-plus-core/tests/protocol_proxy.rs`)**：
+     - 新增 `glm_model_strips_data_url_prefix_from_image_urls`（正向剥离验证）；
+     - 新增 `non_glm_model_preserves_data_url_prefix`（反向保持验证）；
+     - 新增 `glm_model_preserves_remote_image_url`（远端 URL 免改写验证）；
+     - 新增 `chat_sse_preserves_call_id_when_final_chunk_has_empty_id`（DeepSeek 终末空分块回归守护）；
+     - 新增 `model_capabilities_disables_tools_for_pure_completion_models`（纯补全模型 capability 验证）。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **双向协议与图片兼容性完备**：国产 GLM 体系不再报 400 格式错误，非目标模型行为不变；
+  - **SSE 状态机 ID 契约 100% 闭环**：`output_item.added` 与 `output_item.done` 间的 `call_id` / `item_id` 保持强一致，彻底杜绝孤儿 `fc_` 导致的无尽重试死循环；
+  - **单元测试持续全绿**：`apps/codex-plus-manager` 160 项单测全部通过。
 
 ---
 

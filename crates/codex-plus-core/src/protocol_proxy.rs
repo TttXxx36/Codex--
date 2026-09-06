@@ -138,6 +138,7 @@ pub fn responses_to_chat_completions(body: Value) -> anyhow::Result<Value> {
         result["model"] = model.clone();
     }
 
+    let model = body.get("model").and_then(Value::as_str).unwrap_or("");
     let mut messages = Vec::new();
     if let Some(instructions) = body.get("instructions") {
         let text = instruction_text(instructions);
@@ -153,12 +154,11 @@ pub fn responses_to_chat_completions(body: Value) -> anyhow::Result<Value> {
     // 必须在 enforce_tool_call_pairing 之后：它依赖 tool 消息的连续性，
     // 而这一步会往中间插入 user 消息。
     relocate_tool_output_images(&mut messages);
+    adapt_image_urls_for_model(&mut messages, model);
     ensure_tool_call_reasoning_content(&mut messages);
     normalize_chat_messages(&mut messages);
     let messages = collapse_system_messages_to_head(messages);
     result["messages"] = json!(messages);
-
-    let model = body.get("model").and_then(Value::as_str).unwrap_or("");
     if let Some(value) = body.get("max_output_tokens") {
         if is_openai_o_series(model) {
             result["max_completion_tokens"] = value.clone();
@@ -189,13 +189,16 @@ pub fn responses_to_chat_completions(body: Value) -> anyhow::Result<Value> {
 
     apply_chat_reasoning_options(&mut result, &body, model);
 
+    let capabilities = model_capabilities(model);
     let tool_context = build_codex_tool_context(body.get("tools"));
     let mut has_chat_tools = false;
-    if let Some(tools) = body.get("tools").and_then(Value::as_array) {
-        let converted = responses_tools_to_chat_tools(tools, &tool_context);
-        if !converted.is_empty() {
-            has_chat_tools = true;
-            result["tools"] = json!(converted);
+    if capabilities.supports_tools {
+        if let Some(tools) = body.get("tools").and_then(Value::as_array) {
+            let converted = responses_tools_to_chat_tools(tools, &tool_context);
+            if !converted.is_empty() {
+                has_chat_tools = true;
+                result["tools"] = json!(converted);
+            }
         }
     }
 
@@ -1611,7 +1614,12 @@ impl ChatSseState {
         {
             let state = self.tools.entry(chat_index).or_default();
             if let Some(id) = id_delta {
-                state.call_id = id;
+                let trimmed = id.trim();
+                if !trimmed.is_empty() {
+                    if !state.added || state.call_id.trim().is_empty() {
+                        state.call_id = trimmed.to_string();
+                    }
+                }
             }
             if let Some(name) = name_delta {
                 if !name.is_empty() {
@@ -1630,7 +1638,7 @@ impl ChatSseState {
             let waiting_for_custom_tool_name =
                 self.tool_context.has_custom_tools && state.name.is_empty();
             if !state.added
-                && (!state.call_id.is_empty() || !state.name.is_empty())
+                && (!state.call_id.trim().is_empty() || !state.name.is_empty())
                 && !waiting_for_custom_tool_name
             {
                 should_add = true;
@@ -1645,7 +1653,7 @@ impl ChatSseState {
             let assigned = self.next_output_index();
             let state = self.tools.get_mut(&chat_index).expect("tool state exists");
             state.added = true;
-            if state.call_id.is_empty() {
+            if state.call_id.trim().is_empty() {
                 state.call_id = format!("call_{chat_index}");
             }
             if state.name.is_empty() {
@@ -1828,7 +1836,7 @@ impl ChatSseState {
                 let assigned = self.next_output_index();
                 let state = self.tools.get_mut(&key).expect("tool state exists");
                 state.added = true;
-                if state.call_id.is_empty() {
+                if state.call_id.trim().is_empty() {
                     state.call_id = format!("call_{key}");
                 }
                 if state.name.is_empty() {
@@ -1841,6 +1849,12 @@ impl ChatSseState {
             }
 
             let state = self.tools.get_mut(&key).expect("tool state exists");
+            if state.call_id.trim().is_empty() {
+                state.call_id = format!("call_{key}");
+            }
+            if state.item_id.trim().is_empty() {
+                state.item_id = tool_call_item_id(&state.call_id, &state.name, &self.tool_context);
+            }
             let output_index = state.output_index.unwrap_or(0);
             let item = tool_call_done_item(state, &self.tool_context);
             state.done = true;
@@ -2735,6 +2749,44 @@ fn image_part_to_chat(part: &Value) -> Option<Value> {
     Some(json!({ "type": "image_url", "image_url": image_url }))
 }
 
+pub fn is_glm_model(model: &str) -> bool {
+    let lower = model.to_ascii_lowercase();
+    lower.contains("glm") || lower.contains("zhipu") || lower.contains("bigmodel") || lower.contains("z.ai")
+}
+
+pub fn strip_data_url_prefix(url: &str) -> &str {
+    if let Some(rest) = url.strip_prefix("data:") {
+        if let Some(idx) = rest.find(',') {
+            return &rest[idx + 1..];
+        }
+    }
+    url
+}
+
+pub fn adapt_image_urls_for_model(messages: &mut [Value], model: &str) {
+    if !is_glm_model(model) {
+        return;
+    }
+    for msg in messages.iter_mut() {
+        if let Some(content) = msg.get_mut("content").and_then(Value::as_array_mut) {
+            for part in content.iter_mut() {
+                if part.get("type").and_then(Value::as_str) == Some("image_url") {
+                    if let Some(image_url) = part.get_mut("image_url") {
+                        if let Some(url_val) = image_url.get_mut("url") {
+                            if let Some(url_str) = url_val.as_str() {
+                                if url_str.starts_with("data:") {
+                                    let stripped = strip_data_url_prefix(url_str);
+                                    *url_val = json!(stripped);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn responses_content_to_chat_content(_role: &str, content: &Value) -> Value {
     if content.is_null() || content.is_string() {
         return content.clone();
@@ -3613,13 +3665,18 @@ fn push_tool_call_done_sse(
     output_index: u32,
     tool_context: &CodexToolContext,
 ) {
+    let item_id = if !state.item_id.trim().is_empty() {
+        state.item_id.clone()
+    } else {
+        tool_call_item_id(&state.call_id, &state.name, tool_context)
+    };
     if tool_context.is_custom_tool_proxy(&state.name) {
         push_sse(
             output,
             "response.custom_tool_call_input.delta",
             json!({
                 "type": "response.custom_tool_call_input.delta",
-                "item_id": tool_call_item_id(&state.call_id, &state.name, tool_context),
+                "item_id": item_id,
                 "call_id": state.call_id,
                 "output_index": output_index,
                 "delta": reconstruct_custom_tool_call_input_with_context(
@@ -3636,7 +3693,7 @@ fn push_tool_call_done_sse(
         "response.function_call_arguments.done",
         json!({
             "type": "response.function_call_arguments.done",
-            "item_id": state.item_id,
+            "item_id": item_id,
             "output_index": output_index,
             "arguments": state.arguments
         }),
@@ -3644,7 +3701,16 @@ fn push_tool_call_done_sse(
 }
 
 fn tool_call_done_item(state: &ToolCallState, tool_context: &CodexToolContext) -> Value {
-    response_tool_call_item(&state.call_id, &state.name, &state.arguments, tool_context)
+    let safe_call_id = if state.call_id.trim().is_empty() {
+        if let Some(idx) = state.output_index {
+            format!("call_{idx}")
+        } else {
+            "call_0".to_string()
+        }
+    } else {
+        state.call_id.clone()
+    };
+    response_tool_call_item(&safe_call_id, &state.name, &state.arguments, tool_context)
 }
 
 fn response_tool_call_item(
@@ -3653,22 +3719,28 @@ fn response_tool_call_item(
     arguments: &str,
     tool_context: &CodexToolContext,
 ) -> Value {
+    let safe_call_id = if call_id.trim().is_empty() {
+        "call_0"
+    } else {
+        call_id.trim()
+    };
+    let item_id = tool_call_item_id(safe_call_id, name, tool_context);
     if tool_context.is_custom_tool_proxy(name) {
         return json!({
-            "id": tool_call_item_id(call_id, name, tool_context),
+            "id": item_id,
             "type": "custom_tool_call",
             "status": "completed",
-            "call_id": call_id,
+            "call_id": safe_call_id,
             "name": tool_context.original_custom_tool_name(name),
             "input": reconstruct_custom_tool_call_input_with_context(tool_context, name, arguments)
         });
     }
     let (display_name, namespace) = tool_context.openai_name_for_function_tool(name);
     let mut item = json!({
-        "id": format!("fc_{call_id}"),
+        "id": item_id,
         "type": "function_call",
         "status": "completed",
-        "call_id": call_id,
+        "call_id": safe_call_id,
         "name": display_name,
         "arguments": arguments
     });
@@ -3679,12 +3751,21 @@ fn response_tool_call_item(
 }
 
 fn tool_call_item_id(call_id: &str, name: &str, tool_context: &CodexToolContext) -> String {
+    let safe_call_id = if call_id.trim().is_empty() {
+        "call_0"
+    } else {
+        call_id.trim()
+    };
     let prefix = if tool_context.is_custom_tool_proxy(name) {
         "ctc_"
     } else {
         "fc_"
     };
-    format!("{prefix}{call_id}")
+    if safe_call_id.starts_with("fc_") || safe_call_id.starts_with("ctc_") {
+        safe_call_id.to_string()
+    } else {
+        format!("{prefix}{safe_call_id}")
+    }
 }
 
 fn split_leading_think_block(text: &str) -> Option<(String, String)> {
@@ -4685,3 +4766,34 @@ fn is_openai_o_series(model: &str) -> bool {
             .get(1)
             .is_some_and(|byte| byte.is_ascii_digit())
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelCapability {
+    pub supports_tools: bool,
+    pub supports_vision: bool,
+    pub strip_image_data_url_prefix: bool,
+    pub reasoning_style: ChatReasoningStyle,
+}
+
+pub fn model_capabilities(model: &str) -> ModelCapability {
+    let lower = model.to_ascii_lowercase();
+    let is_glm = is_glm_model(&lower);
+    let supports_tools = !is_pure_completion_model(&lower);
+    let reasoning_style = infer_chat_reasoning_style(&lower);
+    let supports_vision = !is_non_vision_model(&lower);
+    ModelCapability {
+        supports_tools,
+        supports_vision,
+        strip_image_data_url_prefix: is_glm,
+        reasoning_style,
+    }
+}
+
+fn is_pure_completion_model(model: &str) -> bool {
+    matches!(model, "o1-preview" | "o1-mini-2024-09-12")
+}
+
+fn is_non_vision_model(model: &str) -> bool {
+    matches!(model, "deepseek-reasoner" | "o1-preview" | "o1-mini")
+}
+

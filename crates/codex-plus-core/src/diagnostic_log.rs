@@ -172,6 +172,17 @@ fn sanitize_string(input: &str) -> String {
             result.replace_range(pos + 7..pos + 7 + end_pos, "[REDACTED]");
         }
     }
+    while let Some(pos) = result.find("sk-") {
+        let after = &result[pos + 3..];
+        let end_pos = after
+            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ';' || c == '}' || c == ']')
+            .unwrap_or(after.len());
+        if end_pos >= 8 {
+            result.replace_range(pos..pos + 3 + end_pos, "[REDACTED]");
+        } else {
+            break;
+        }
+    }
     result
 }
 
