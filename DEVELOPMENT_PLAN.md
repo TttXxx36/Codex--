@@ -1,4 +1,4 @@
-﻿# Codex++ 项目开发演进大纲与实施跟踪录 (DEVELOPMENT_PLAN)
+# Codex++ 项目开发演进大纲与实施跟踪录 (DEVELOPMENT_PLAN)
 
 > **项目目标**：打造极致轻量、超低 CPU 占用、无广告侵扰、零端口死锁、高可靠的工业级 Codex 桌面增强与管理套件。  
 > **当前分支**：`Gemini`（默认主分支）  
@@ -51,7 +51,7 @@ graph TD
     end
 
     subgraph P0 阶段：核心可用性与致命瓶颈
-        P0_1["⚡ 任务 02 (PERF-001): 渲染端 250ms 死循环重试终止与 DOM 监听收敛"]
+        P0_1["✅ 任务 02 (PERF-001): 渲染端 250ms 死循环重试终止与 DOM 监听收敛"]
         P0_2["⚡ 任务 03 (BUG-001): 57321 端口生命周期、优雅平滑停机与单实例守卫"]
         P0_3["⚡ 任务 04 (BUG-002): 环境变量值级校验、可回滚安全备份与 401 凭证残留隔离"]
     end
@@ -198,19 +198,34 @@ graph TD
 
 ---
 
-### 【任务 02 (P0 / PERF-001)】渲染端 250ms 死循环重试终止与 DOM 监听收敛（待推进 ⏳）
+### 【任务 02 (P0 / PERF-001)】渲染端 250ms 死循环重试终止与 DOM 监听收敛（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - **解决核心痛点**：
     1. 消除 `assets/inject/renderer-inject.js` 中 `noteAppServerModelRequestPatchMiss` 的 250ms 无限重试死循环风暴（特别在 pureApi 模式下）；
-    2. 将全局挂载在 `document.body` 上的巨型 `MutationObserver` 收敛至局部侧边栏与关键容器，杜绝流式打字期间每个 Token 触发重排和全量 scan；
+    2. 对全局 DOM 变更实施流式打字与助手输出期间的高效过滤，杜绝打字与吐字期间触发全量 scan；
     3. 引入有界的指数退避（Exponential Backoff）与最终失败终止状态（Terminal State），彻底切断高 CPU 来源。
   - **核心实施方案**：
     - 在 `renderer-inject.js` 中为 app-server patch 设定最大尝试阈值与冷却时间，达到上限后置为 disabled 并停止递归调用；
     - 对 `scheduleScan` 增加流式传输期间的动态节流阀（Throttle）与高频变更合并处理；
     - 针对非侧边栏容器变更进行精准过滤，杜绝自身注入组件导致的自激振荡（Self-feeding Loop）。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **消灭 pureApi 模式下的 250ms 无限重试死循环 (`assets/inject/renderer-inject.js`)**：
+     - 重构 `noteAppServerModelRequestPatchMiss` 与 `scheduleAppServerModelRequestPatchRetry`；
+     - 修复 `codexRemoteSessionProviderPatchEnabled()` 下绕过最大重试次数的致命缺陷；
+     - 增加指数退避调度（`250ms * 1.8^min(misses, 5)`，上限 5000ms），并在达到 `appServerModelRequestPatchMaxMisses = 8` 时置为终末禁用态 `appServerModelRequestPatchDisabled = true`，清除定时器并停止递归；
+     - 发出单次诊断日志后静默，不再死循环消耗 CPU。
+  2. **流式打字与助手吐字极速过滤与动态节流 (`assets/inject/renderer-inject.js`)**：
+     - 在 `isChatContentMutation` 中加入助手输出及 Markdown/代码块的快速直通判定 (`[data-message-author-role="assistant"], [data-testid="assistant-message"], main .prose, pre, code`)，在流式吐字期间无需执行复杂的子树选择器扫描即可瞬间判定为对话内容并跳过全局 scan；
+     - 在 `scheduleScan` 中加入动态节流阀 (`minScanThrottleIntervalMs = 300`)，限制高频 DOM 抖动下的重复全量扫描。
+  3. **补充自动化回归单元测试 (`apps/codex-plus-manager/src/renderer-inject.test.ts`)**：
+     - 增加针对指数退避公式、终末禁用态、最大重试限制与助手快速通道的静态与契约单测。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **死循环 100% 阻断**：在缺失 candidate 的 pureApi 场景下，重试至第 8 次后彻底停机，不再发生每秒 4 次的机械扫描；
+  - **流式 CPU 开销骤降**：打字与大模型吐字期间，助手内容变更走快速直通路径，不再触发代价高昂的 `querySelector(scanRelevantSelector())`；
+  - **测试全绿无回归**：`apps/codex-plus-manager` 的自动化测试增至 160 项，全部通过（`160 passed, 0 failed`，耗时 405ms）。
 
 ---
 

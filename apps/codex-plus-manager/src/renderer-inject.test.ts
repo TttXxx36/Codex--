@@ -365,6 +365,17 @@ describe("renderer injection scan scheduling", () => {
     // 属性变更没有 added/removed 节点，仍按容器相关性判定。
     assert.equal(shouldScheduleScan([mutation()]), true);
   });
+
+  it("enforces exponential backoff and terminal disabled state for pureApi patch retry", async () => {
+    const renderer = await readFile(rendererPath, "utf8");
+
+    assert.match(renderer, /appServerModelRequestPatchMaxMisses\s*=\s*8/);
+    assert.match(renderer, /appServerModelRequestPatchDisabled/);
+    assert.match(renderer, /Math\.pow\(1\.8,\s*Math\.min\(appServerModelRequestPatchMissCount,\s*5\)\)/);
+    assert.match(renderer, /model_app_server_request_patch_skipped/);
+    assert.match(renderer, /minScanThrottleIntervalMs\s*=\s*300/);
+    assert.match(renderer, /\[data-message-author-role="assistant"\]/);
+  });
 });
 
 interface MarketplacePatchHarness {

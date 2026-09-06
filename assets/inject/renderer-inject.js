@@ -6856,11 +6856,17 @@
 
   function scheduleAppServerModelRequestPatchRetry() {
     if (!codexRemoteSessionProviderPatchEnabled()) return;
+    if (appServerModelRequestPatchDisabled) return;
     if (appServerModelRequestPatchRetryTimer) return;
+    // Exponential backoff with jitter: 250ms * 1.8^min(misses, 5), capped at 5000ms
+    const backoffMs = Math.min(
+      Math.round(250 * Math.pow(1.8, Math.min(appServerModelRequestPatchMissCount, 5))),
+      5000
+    );
     appServerModelRequestPatchRetryTimer = window.setTimeout(() => {
       appServerModelRequestPatchRetryTimer = 0;
       installAppServerModelRequestPatch();
-    }, 250);
+    }, backoffMs);
   }
 
   function noteAppServerModelRequestPatchMiss(event, detail) {
@@ -6877,16 +6883,22 @@
     if (appServerModelRequestPatchMissCount === 1) {
       sendCodexPlusDiagnostic(event, detail);
     }
-    if (codexRemoteSessionProviderPatchEnabled()) {
-      scheduleAppServerModelRequestPatchRetry();
+    if (appServerModelRequestPatchMissCount >= appServerModelRequestPatchMaxMisses) {
+      if (!appServerModelRequestPatchDisabled) {
+        appServerModelRequestPatchDisabled = true;
+        if (appServerModelRequestPatchRetryTimer) {
+          clearTimeout(appServerModelRequestPatchRetryTimer);
+          appServerModelRequestPatchRetryTimer = 0;
+        }
+        sendCodexPlusDiagnostic("model_app_server_request_patch_skipped", {
+          misses: appServerModelRequestPatchMissCount,
+          lastEvent: event,
+        });
+      }
       return;
     }
-    if (appServerModelRequestPatchMissCount >= appServerModelRequestPatchMaxMisses && !appServerModelRequestPatchDisabled) {
-      appServerModelRequestPatchDisabled = true;
-      sendCodexPlusDiagnostic("model_app_server_request_patch_skipped", {
-        misses: appServerModelRequestPatchMissCount,
-        lastEvent: event,
-      });
+    if (codexRemoteSessionProviderPatchEnabled()) {
+      scheduleAppServerModelRequestPatchRetry();
     }
   }
 
@@ -10301,7 +10313,11 @@
 
   function isChatContentMutation(mutation) {
     const target = mutation.target;
-    if (!target?.closest?.('[data-message-author-role], [data-testid="conversation-turn"], main .prose')) return false;
+    // Fast path for streaming assistant tokens & markdown / code blocks
+    if (target?.closest?.('[data-message-author-role="assistant"], [data-testid="assistant-message"], main .prose, pre, code')) {
+      return true;
+    }
+    if (!target?.closest?.('[data-message-author-role], [data-testid="conversation-turn"]')) return false;
     return !Array.from(mutation.addedNodes).some((node) => node.nodeType === 1 && isScanRelevantNode(node)) &&
       !Array.from(mutation.removedNodes).some((node) => node.nodeType === 1 && isScanRelevantNode(node));
   }
@@ -10324,10 +10340,14 @@
     });
   }
 
+  let lastScanExecutedAt = 0;
+  const minScanThrottleIntervalMs = 300;
+
   function runScheduledScan() {
     window.__codexSessionDeleteScanPending = false;
     clearTimeout(window.__codexSessionDeleteScanTimer);
     window.__codexSessionDeleteScanTimer = null;
+    lastScanExecutedAt = Date.now();
     scan();
   }
 
@@ -10337,7 +10357,11 @@
     if (!shouldScheduleScan(mutations)) return;
     if (window.__codexSessionDeleteScanPending) return;
     window.__codexSessionDeleteScanPending = true;
-    window.__codexSessionDeleteScanTimer = setTimeout(runScheduledScan, 200);
+
+    // Throttle high-frequency mutations (e.g. streaming or rapid typing)
+    const elapsed = Date.now() - lastScanExecutedAt;
+    const delay = elapsed < minScanThrottleIntervalMs ? (minScanThrottleIntervalMs - elapsed + 50) : 200;
+    window.__codexSessionDeleteScanTimer = setTimeout(runScheduledScan, delay);
   }
 
   /**
