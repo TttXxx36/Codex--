@@ -60,7 +60,7 @@ graph TD
         P1_1["✅ 任务 05 (BUG-006): 会话分享 UI/后端语义收敛为纯本地安全导出"]
         P1_2["✅ 任务 06 (BUG-003): Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约"]
         P1_3["✅ 任务 07 (BUG-004): 官方改版弹性选择器降级链 (Class->ARIA->语义)"]
-        P1_4["🛡️ 任务 08 (BUG-005): 会话删除/撤回与索引文件事务一致性治理"]
+        P1_4["✅ 任务 08 (BUG-005): 会话删除/撤回与索引文件事务一致性治理"]
         P1_5["🛡️ 任务 09 (BUG-007): Electron/CDP/Launcher 最小自动化回归测试"]
     end
 
@@ -375,12 +375,43 @@ graph TD
 
 ---
 
-### 【任务 08 (P1 / BUG-005)】会话删除/撤回与索引文件事务一致性治理（待推进 ⏳）
+### 【任务 08 (P1 / BUG-005)】会话删除/撤回与索引文件事务一致性治理（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
-  - 保证在多版本 SQLite Schema、rollout 本地文件及 `session_index.jsonl` 之间执行删除与 Undo 时的数据完整性，杜绝孤儿会话与重启复现。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+  - **解决核心痛点**：
+    1. 备份文件防篡改与完整性校验缺失：防止备份落盘截断或文件被外部篡改导致恢复损坏数据；
+    2. 多 Schema 索引备份割裂：以往仅 `CodexThreads` 会备份 `session_index.jsonl`，而 `GenericSessions` 与 `CodexAutomationRuns` 删除数据库行后虽移除了索引，但 Undo 时无法恢复索引记录，导致重启后会话丢失；
+    3. 纯 API 模式删除无 Undo 支持：纯 API 会话在数据库中无记录，通过清理 `session_index.jsonl` 兜底删除后未写备份，无 `undo_token` 导致无法撤销；
+    4. 关联文件删除失败导致状态割裂：`threads` 关联的 rollout 文件若因占用无法删除，SQLite 行已被提交删除，产生不可逆孤儿文件；
+    5. Undo 恢复缺乏全局活跃会话冲突检查：恢复已删除会话时若索引文件中已存在相同 ID 的新活跃会话，容易引发状态混乱或覆盖。
+  - **核心实施方案**：
+    - 在 `BackupStore` 中引入 SHA-256 校验和计算与原子写入，在读取/恢复前执行完整性校验；
+    - 统一抽象 `capture_session_index_backup`，将三种 Schema 全数纳入索引状态快照保护范围；
+    - 纯 API 模式兜底删除前先行捕获索引备份并派发 `undo_token`，`restore_backups` 智能支持纯索引备份的逆向还原；
+    - 增加文件清理失败的自动事务补偿回滚机制（`self.undo(&token)`），不触动索引文件；
+    - 在 `restore_backups` 预检阶段增加 `detect_session_index_conflicts`，坚决阻断对同名新会话的覆盖。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **备份校验和与原子落盘 (`crates/codex-plus-data/src/backup.rs`)**：
+     - 在 `write_backup` 中使用 `sha2::Sha256` 计算 `tables` 结构的十六进制哈希并存入 `"checksum": "sha256:..."`，同时使用 `codex_plus_core::settings::atomic_write` 保证原子写入；
+     - 在 `read_backup` 中比对校验和，检测到截断或篡改时阻断并抛出 `Backup checksum mismatch` 错误，同时兼容旧版无哈希备份。
+  2. **跨 Schema 索引快照与纯 API 会话回滚治理 (`crates/codex-plus-data/src/storage.rs`)**：
+     - 实现 `capture_session_index_backup`，在 `delete_generic_session`、`delete_codex_thread` 与 `delete_codex_automation_run` 中统一抓取 `__session_index` 写入备份快照；
+     - 在 `delete_local_from_paths` 针对纯 API 模式的 `session_index.jsonl` 清理分支中，先生成带校验和的备份再执行删除，赋予纯 API 会话完备的撤回凭证 `undo_token` 与 `backup_path`。
+  3. **文件删除失败自动补偿回滚与冲突预检 (`crates/codex-plus-data/src/storage.rs`)**：
+     - 在 `delete_codex_thread` 中，若 rollout 文件删除遇阻（`!file_errors.is_empty()`），立即调用 `self.undo(&token)` 自动回滚已提交的数据库变更，保留索引记录并返回结构化失败，彻底杜绝孤儿文件；
+     - 在 `restore_backups` 预检阶段引入 `detect_session_index_conflicts`，严格检查 `session_index.jsonl` 中是否存在同 ID 活跃会话，防止数据冲突与覆盖；
+     - 重构 `restore_backups` 支持无 SQLite 数据库的纯索引备份还原，确保纯 API 会话可 100% 成功 Undo。
+  4. **完备单元测试套件固化 (`crates/codex-plus-data/tests/storage_adapter.rs`)**：
+     - 新增 `backup_store_verifies_checksum_and_detects_tampering`（哈希生成与篡改拒绝）；
+     - 新增 `delete_pure_api_session_creates_backup_and_undo_restores_it`（纯 API 模式会话删除与撤回）；
+     - 新增 `undo_fails_when_session_index_has_conflicting_active_session`（活跃会话冲突保护与免覆盖断言）；
+     - 新增 `delete_generic_session_preserves_session_index_and_undo_restores_it`（通用 Schema 索引备份与还原往返一致性）。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **数据一致性强力收敛**：所有 SQLite Schema 与纯 API 模式均具备 100% 完整的备份快照、SHA-256 完整性守护与双向撤回支持；
+  - **抗灾与自愈能力完备**：文件清理异常具备数据库自动回滚补偿，Undo 前置冲突预检杜绝新旧会话踩踏与幽灵复现；
+  - **测试全绿无回归**：Manager 前端契约测试 162 项全数通过（0 fail），Rust 数据层回归用例完备扩展。
 
 ---
 

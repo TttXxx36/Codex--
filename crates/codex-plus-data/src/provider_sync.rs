@@ -2022,7 +2022,7 @@ fn plan_session_index_cleanup(
     }))
 }
 
-fn known_session_index_candidate(line: &str) -> Option<SessionIndexCleanupCandidate> {
+pub(crate) fn known_session_index_candidate(line: &str) -> Option<SessionIndexCleanupCandidate> {
     let record = serde_json::from_str::<Value>(line).ok()?;
     let object = record.as_object()?;
     if object.len() != 3
@@ -2363,7 +2363,7 @@ fn collect_rollout_files(root: &Path, files: &mut Vec<PathBuf>) -> anyhow::Resul
     Ok(())
 }
 
-fn split_line_ending(segment: &str) -> (&str, &str) {
+pub(crate) fn split_line_ending(segment: &str) -> (&str, &str) {
     if let Some(line) = segment.strip_suffix("\r\n") {
         (line, "\r\n")
     } else if let Some(line) = segment.strip_suffix('\n') {

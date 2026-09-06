@@ -1150,3 +1150,156 @@ fn thread_usage_history_reads_rollout_token_count_events() {
         })
     );
 }
+
+#[test]
+fn backup_store_verifies_checksum_and_detects_tampering() {
+    let tmp = tempdir().unwrap();
+    let store = BackupStore::new(tmp.path().join("backups"));
+    let dummy_db = tmp.path().join("dummy.sqlite");
+    fs::write(&dummy_db, b"sqlite").unwrap();
+
+    let token = store
+        .write_backup(
+            "test-sess",
+            &dummy_db,
+            json!({"sessions": [{"id": "test-sess", "title": "Original"}]}),
+        )
+        .unwrap();
+
+    // 1. Read valid backup: succeeds and includes sha256 checksum
+    let payload = store.read_backup(&token).unwrap();
+    assert!(payload["checksum"].as_str().unwrap().starts_with("sha256:"));
+
+    // 2. Tamper with backup file: modify content in tables
+    let backup_path = store.path_for(&token);
+    let content = fs::read_to_string(&backup_path).unwrap();
+    let tampered = content.replace("Original", "Tampered");
+    fs::write(&backup_path, tampered).unwrap();
+
+    // 3. Read tampered backup: must fail with checksum mismatch
+    let err = store.read_backup(&token).unwrap_err();
+    assert!(
+        err.to_string().contains("Backup checksum mismatch"),
+        "expected checksum mismatch error, got: {err}"
+    );
+}
+
+#[test]
+fn delete_pure_api_session_creates_backup_and_undo_restores_it() {
+    let tmp = tempdir().unwrap();
+    let codex_home = tmp.path().join("home");
+    fs::create_dir_all(&codex_home).unwrap();
+    let index_path = codex_home.join("session_index.jsonl");
+    fs::write(
+        &index_path,
+        "{\"id\":\"pure-1\",\"thread_name\":\"Pure API Session\",\"updated_at\":\"2026-06-01T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let backup_store = BackupStore::new(tmp.path().join("backups"));
+    let non_existent_db = tmp.path().join("missing.sqlite");
+
+    let deleted = delete_local_from_paths(
+        vec![non_existent_db.clone()],
+        backup_store.clone(),
+        &session("pure-1", "Pure API Session"),
+        Some(&codex_home),
+    );
+
+    assert_eq!(deleted.status, DeleteStatus::LocalDeleted);
+    assert!(deleted.undo_token.is_some());
+    // session_index.jsonl entry should be removed
+    assert_eq!(fs::read_to_string(&index_path).unwrap().trim(), "");
+
+    // Undo restoration
+    let adapter = SQLiteStorageAdapter::new(&non_existent_db, backup_store).with_codex_home(&codex_home);
+    let restored = adapter.undo(deleted.undo_token.as_deref().unwrap());
+
+    assert_eq!(restored.status, DeleteStatus::Undone);
+    assert_eq!(restored.session_id, "pure-1");
+    let index_content = fs::read_to_string(&index_path).unwrap();
+    assert!(index_content.contains("pure-1"));
+    assert!(index_content.contains("Pure API Session"));
+}
+
+#[test]
+fn undo_fails_when_session_index_has_conflicting_active_session() {
+    let tmp = tempdir().unwrap();
+    let codex_home = tmp.path().join("home");
+    fs::create_dir_all(&codex_home).unwrap();
+    let index_path = codex_home.join("session_index.jsonl");
+    fs::write(
+        &index_path,
+        "{\"id\":\"conflict-t1\",\"thread_name\":\"Old Session\",\"updated_at\":\"2026-06-01T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let db_path = tmp.path().join("codex.sqlite");
+    let rollout_path = tmp.path().join("rollout.jsonl");
+    fs::write(&rollout_path, b"{}\n").unwrap();
+    create_codex_thread_db(&db_path, &rollout_path);
+
+    let db = Connection::open(&db_path).unwrap();
+    db.execute(
+        "INSERT INTO threads (id, rollout_path, title, cwd) VALUES ('conflict-t1', ?1, 'Old Session', '/app')",
+        [&rollout_path.to_string_lossy().to_string()],
+    )
+    .unwrap();
+    drop(db);
+
+    let backup_store = BackupStore::new(tmp.path().join("backups"));
+    let adapter = SQLiteStorageAdapter::new(&db_path, backup_store).with_codex_home(&codex_home);
+
+    let deleted = adapter.delete_local(&session("conflict-t1", "Old Session"));
+    assert_eq!(deleted.status, DeleteStatus::LocalDeleted);
+    let token = deleted.undo_token.unwrap();
+
+    // Now simulate a new active session created with the same ID
+    fs::write(
+        &index_path,
+        "{\"id\":\"conflict-t1\",\"thread_name\":\"New Active Session\",\"updated_at\":\"2026-06-02T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let restored = adapter.undo(&token);
+    assert_eq!(restored.status, DeleteStatus::Failed);
+    assert!(
+        restored
+            .message
+            .contains("restore conflict: session_index already contains active session conflict-t1"),
+        "unexpected error message: {}",
+        restored.message
+    );
+
+    // Ensure the new active session entry in session_index.jsonl was NOT modified
+    let content = fs::read_to_string(&index_path).unwrap();
+    assert!(content.contains("New Active Session"));
+}
+
+#[test]
+fn delete_generic_session_preserves_session_index_and_undo_restores_it() {
+    let tmp = tempdir().unwrap();
+    let codex_home = tmp.path().join("home");
+    fs::create_dir_all(&codex_home).unwrap();
+    let index_path = codex_home.join("session_index.jsonl");
+    fs::write(
+        &index_path,
+        "{\"id\":\"s1\",\"thread_name\":\"First\",\"updated_at\":\"2026-06-01T00:00:00Z\"}\n",
+    )
+    .unwrap();
+
+    let db_path = tmp.path().join("codex.sqlite");
+    create_supported_db(&db_path);
+    let adapter = SQLiteStorageAdapter::new(&db_path, BackupStore::new(tmp.path().join("backups")))
+        .with_codex_home(&codex_home);
+
+    let deleted = adapter.delete_local(&session("s1", "First"));
+    assert_eq!(deleted.status, DeleteStatus::LocalDeleted);
+    assert_eq!(fs::read_to_string(&index_path).unwrap().trim(), "");
+
+    let restored = adapter.undo(deleted.undo_token.as_deref().unwrap());
+    assert_eq!(restored.status, DeleteStatus::Undone);
+    let content = fs::read_to_string(&index_path).unwrap();
+    assert!(content.contains("s1"));
+    assert!(content.contains("First"));
+}

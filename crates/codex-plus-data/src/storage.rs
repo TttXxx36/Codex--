@@ -55,10 +55,38 @@ pub fn delete_local_from_paths(
         && let Some(home) = codex_home
     {
         let thread_id = normalize_codex_thread_id(&session.session_id);
+        let session_index_lines = crate::provider_sync::session_index_lines_for_thread(home, &thread_id)
+            .unwrap_or_default();
+        let backup_token = if !session_index_lines.is_empty() {
+            let mut tables = Map::new();
+            tables.insert(
+                "__session_index".to_string(),
+                Value::Array(
+                    session_index_lines
+                        .iter()
+                        .map(|line| Value::String(line.clone()))
+                        .collect(),
+                ),
+            );
+            backup_store
+                .write_backup(
+                    &thread_id,
+                    &home.join("session_index.jsonl"),
+                    Value::Object(tables),
+                )
+                .ok()
+        } else {
+            None
+        };
         match crate::provider_sync::remove_session_index_entry(home, &thread_id) {
             Ok(removed) if removed > 0 => {
                 result.status = DeleteStatus::LocalDeleted;
                 result.message = format!("已从 session_index.jsonl 清理 {removed} 条记录");
+                if let Some(token) = backup_token {
+                    let backup_path = backup_store.path_for(&token);
+                    result.undo_token = Some(token);
+                    result.backup_path = Some(backup_path.to_string_lossy().to_string());
+                }
             }
             Ok(_) => {}
             Err(error) => {
@@ -462,10 +490,17 @@ impl SQLiteStorageAdapter {
         } else {
             Vec::new()
         };
+        let mut tables = Map::new();
+        tables.insert("sessions".to_string(), Value::Array(sessions));
+        if !messages.is_empty() {
+            tables.insert("messages".to_string(), Value::Array(messages));
+        }
+        let thread_id = normalize_codex_thread_id(&session.session_id);
+        capture_session_index_backup(self.codex_home.as_deref(), &thread_id, &mut tables);
         let token = self.backup_store.write_backup(
             &session.session_id,
             &self.db_path,
-            json!({"sessions": sessions, "messages": messages}),
+            Value::Object(tables),
         )?;
         let backup_path = self.backup_store.path_for(&token);
         let delete_result = (|| -> anyhow::Result<()> {
@@ -545,24 +580,7 @@ impl SQLiteStorageAdapter {
         if !file_backups.is_empty() {
             tables.insert("__files".to_string(), Value::Array(file_backups.clone()));
         }
-        let session_index_lines = self
-            .codex_home
-            .as_deref()
-            .and_then(|home| {
-                crate::provider_sync::session_index_lines_for_thread(home, &thread_id).ok()
-            })
-            .unwrap_or_default();
-        if !session_index_lines.is_empty() {
-            tables.insert(
-                "__session_index".to_string(),
-                Value::Array(
-                    session_index_lines
-                        .iter()
-                        .map(|line| Value::String(line.clone()))
-                        .collect(),
-                ),
-            );
-        }
+        capture_session_index_backup(self.codex_home.as_deref(), &thread_id, &mut tables);
         let token =
             self.backup_store
                 .write_backup(&thread_id, &self.db_path, Value::Object(tables))?;
@@ -599,7 +617,7 @@ impl SQLiteStorageAdapter {
             ));
         }
         let mut file_errors = Vec::new();
-        for file in file_backups {
+        for file in &file_backups {
             if let Some(path) = file.get("path").and_then(Value::as_str) {
                 if let Err(err) = fs::remove_file(path) {
                     if err.kind() != std::io::ErrorKind::NotFound {
@@ -607,6 +625,20 @@ impl SQLiteStorageAdapter {
                     }
                 }
             }
+        }
+        if !file_errors.is_empty() {
+            let _ = self.undo(&token);
+            let message = format!(
+                "会话关联文件删除失败：{}；已自动回退数据库变更",
+                file_errors.join("; ")
+            );
+            return Ok(DeleteResult {
+                status: DeleteStatus::Failed,
+                session_id: thread_id,
+                message,
+                undo_token: Some(token),
+                backup_path: Some(backup_path.to_string_lossy().to_string()),
+            });
         }
         let session_index_note = self
             .codex_home
@@ -616,19 +648,6 @@ impl SQLiteStorageAdapter {
                     .err()
                     .map(|error| format!("session_index.jsonl 清理失败：{error}"))
             });
-        if !file_errors.is_empty() {
-            let mut message = format!("本地数据库已删除，但文件删除失败：{}", file_errors.join("; "));
-            if let Some(note) = session_index_note.as_deref() {
-                message = format!("{message}；{note}");
-            }
-            return Ok(DeleteResult {
-                status: DeleteStatus::Failed,
-                session_id: thread_id,
-                message,
-                undo_token: Some(token.clone()),
-                backup_path: Some(backup_path.to_string_lossy().to_string()),
-            });
-        }
         let mut result = local_deleted(&thread_id, &token, &backup_path);
         if let Some(note) = session_index_note.as_deref() {
             result.message = format!("{}；{}", result.message, note);
@@ -667,6 +686,7 @@ impl SQLiteStorageAdapter {
                 "Thread not found in local storage".to_string(),
             ));
         }
+        capture_session_index_backup(self.codex_home.as_deref(), &thread_id, &mut tables);
         let token =
             self.backup_store
                 .write_backup(&thread_id, &self.db_path, Value::Object(tables))?;
@@ -857,6 +877,70 @@ fn undo_backups(backup_store: &BackupStore, token: &str) -> anyhow::Result<Vec<V
         .collect()
 }
 
+fn capture_session_index_backup(
+    codex_home: Option<&Path>,
+    thread_id: &str,
+    tables: &mut Map<String, Value>,
+) {
+    let session_index_lines = codex_home
+        .and_then(|home| {
+            crate::provider_sync::session_index_lines_for_thread(home, thread_id).ok()
+        })
+        .unwrap_or_default();
+    if !session_index_lines.is_empty() {
+        tables.insert(
+            "__session_index".to_string(),
+            Value::Array(
+                session_index_lines
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        );
+    }
+}
+
+fn has_database_tables(tables: &Map<String, Value>) -> bool {
+    tables.keys().any(|table| !table.starts_with("__"))
+}
+
+fn detect_session_index_conflicts(
+    codex_home: Option<&Path>,
+    tables: &Map<String, Value>,
+) -> anyhow::Result<()> {
+    let Some(home) = codex_home else {
+        return Ok(());
+    };
+    let Some(entries) = tables.get("__session_index").and_then(Value::as_array) else {
+        return Ok(());
+    };
+    let path = home.join("session_index.jsonl");
+    if !path.exists() {
+        return Ok(());
+    }
+    let text = fs::read_to_string(&path)?;
+    let mut existing_ids = HashSet::new();
+    for segment in text.split_inclusive('\n') {
+        let (line, _) = crate::provider_sync::split_line_ending(segment);
+        if let Some(candidate) = crate::provider_sync::known_session_index_candidate(line) {
+            existing_ids.insert(candidate.id);
+        }
+    }
+    for entry in entries {
+        if let Some(line) = entry.as_str() {
+            if let Some(candidate) = crate::provider_sync::known_session_index_candidate(line) {
+                if existing_ids.contains(&candidate.id) {
+                    anyhow::bail!(
+                        "restore conflict: session_index already contains active session {}",
+                        candidate.id
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn restore_backups(
     backups: &[Value],
     fallback_db_path: &Path,
@@ -867,23 +951,28 @@ fn restore_backups(
         let Some(tables) = backup["tables"].as_object() else {
             continue;
         };
-        let source_db = backup_source_db(backup, fallback_db_path, allowed_db_paths)?;
-        let db = Connection::open_with_flags(&source_db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         validate_restore_tables(tables)?;
-        detect_restore_conflicts(&db, tables)?;
         detect_file_restore_conflicts(tables)?;
-        preflight_restore_rows(&db, tables)?;
+        detect_session_index_conflicts(codex_home, tables)?;
+        if has_database_tables(tables) {
+            let source_db = backup_source_db(backup, fallback_db_path, allowed_db_paths)?;
+            let db = Connection::open_with_flags(&source_db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            detect_restore_conflicts(&db, tables)?;
+            preflight_restore_rows(&db, tables)?;
+        }
     }
 
     for backup in backups {
         let Some(tables) = backup["tables"].as_object() else {
             continue;
         };
-        let source_db = backup_source_db(backup, fallback_db_path, allowed_db_paths)?;
-        let mut db = Connection::open_with_flags(&source_db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        let tx = db.transaction()?;
-        restore_rows(&tx, tables)?;
-        tx.commit()?;
+        if has_database_tables(tables) {
+            let source_db = backup_source_db(backup, fallback_db_path, allowed_db_paths)?;
+            let mut db = Connection::open_with_flags(&source_db, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            let tx = db.transaction()?;
+            restore_rows(&tx, tables)?;
+            tx.commit()?;
+        }
         if let Some(files) = tables.get("__files").and_then(Value::as_array) {
             for file in files {
                 let Some(path) = file.get("path").and_then(Value::as_str) else {
@@ -908,7 +997,7 @@ fn restore_backups(
                 .collect::<Vec<_>>();
             if !lines.is_empty() {
                 if let Some(home) = codex_home {
-                    let _ = crate::provider_sync::restore_session_index_entries(home, &lines);
+                    let _ = crate::provider_sync::restore_session_index_entries(home, &lines)?;
                 }
             }
         }
