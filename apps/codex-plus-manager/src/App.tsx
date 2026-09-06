@@ -4081,40 +4081,6 @@ function OverviewScreen({
   const health = healthItems(overview);
   return (
     <>
-      <Panel className="jojocode-overview">
-        <CardContent>
-          <div className="jojocode-overview-layout">
-            <div className="jojocode-overview-main">
-              <div className="jojocode-overview-mark">
-                <Network className="h-5 w-5" />
-              </div>
-              <div>
-                <span className="eyebrow">{t("项目赞助商")}</span>
-                <h2>JOJO Code</h2>
-                <p>
-                  {t("JOJO Code 提供稳定、价格合理的 API 中转服务，支持 GPT-5.6 全系列、Fable 5、Sonnet 5、GPT-5.5、GPT-5.4、Claude Opus 4.8、Claude Opus 4.7、gpt-image-2 等模型与图像能力。")}
-                </p>
-              </div>
-            </div>
-            <div className="jojocode-overview-side">
-              <div className="jojocode-model-tags">
-                <span>GPT-5.6 全系列</span>
-                <span>Fable 5</span>
-                <span>Sonnet 5</span>
-                <span>GPT-5.5</span>
-                <span>GPT-5.4</span>
-                <span>Opus 4.8</span>
-                <span>Opus 4.7</span>
-                <span>gpt-image-2</span>
-              </div>
-              <Button onClick={() => void actions.openExternalUrl("https://jojocode.com/")}>
-                <ExternalLink className="h-4 w-4" />
-                {t("打开 JOJO Code")}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Panel>
       <Panel>
         <CardHead title={t("健康检查")} detail={t("概览只展示关键问题，具体配置在对应页面处理")} />
         <CardContent>
@@ -6266,24 +6232,16 @@ function AboutScreen({
           <div className="metric-list">
             <Metric label={t("Codex++ 版本")} value={overview?.current_version ?? update?.currentVersion ?? "-"} />
             <Metric label={t("Codex 版本")} value={overview?.codex_version ?? t("未检测到")} />
-            <Metric label={t("项目地址")} value="github.com/BigPizzaV3/CodexPlusPlus" />
+            <Metric label={t("项目地址")} value="github.com/TttXxx36/Codex--" />
           </div>
           <Toolbar>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/BigPizzaV3/CodexPlusPlus")} variant="secondary">
+            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--")} variant="secondary">
               <ExternalLink className="h-4 w-4" />
               {t("打开项目主页")}
             </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/BigPizzaV3/CodexPlusPlus/issues")} variant="secondary">
+            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--/issues")} variant="secondary">
               <ExternalLink className="h-4 w-4" />
               {t("反馈问题")}
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://discord.gg/y96kX7A76v")} variant="secondary">
-              <MessageCircle className="h-4 w-4" />
-              Discord
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://t.me/CodexPlusPlus")} variant="secondary">
-              <MessageCircle className="h-4 w-4" />
-              Telegram
             </Button>
           </Toolbar>
         </CardContent>

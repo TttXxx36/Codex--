@@ -115,6 +115,34 @@ graph TD
 
 ---
 
+### 【任务 01-D】首页 JOJO Code 残留赞助商广告彻底清除与项目信息归属切换（已完成 ✅）
+
+- **🎯 阶段计划 (Plan)**：
+  - 彻底清除管理控制台首页（概览）顶部残留的“项目赞助商 JOJO Code”广告横幅卡片；
+  - 将关于页面及注入弹窗中的“项目地址”、“问题反馈”、“版本更新检查源”彻底切换为用户本人的项目仓库地址（`https://github.com/TttXxx36/Codex--`），清除原作者 Discord/Telegram 推广。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **首页 JOJO Code 广告横幅剔除 (`apps/codex-plus-manager/src/App.tsx`)**：
+     - 从 `OverviewScreen` 组件中彻底删除 `<Panel className="jojocode-overview">` 广告横幅容器及其附属组件；
+     - 首页直接以“健康检查”与系统概览为起点，恢复界面的极简与专业性。
+  2. **项目归属与链接全面变更 (`App.tsx` & `renderer-inject.js`)**：
+     - 将管理器“关于”页面的“项目地址”由原仓库替换为 `github.com/TttXxx36/Codex--`；
+     - 将“打开项目主页”与“反馈问题”链接同步指向本仓库的 GitHub 主页与 Issues 地址；
+     - 移除外部 Discord / Telegram 社区按钮；
+     - 在注入前端关于对话框中同步更新 GitHub 链接并剔除第三方社群推广。
+  3. **后端更新源指向校正 (`crates/codex-plus-core/src/update.rs` & `Cargo.toml`)**：
+     - 将 `DEFAULT_REPOSITORY` 改为 `TttXxx36/Codex--`；
+     - 将 `DEFAULT_LATEST_JSON_URL` 指向用户本人的 Release `latest.json`，确保软件内部检查更新自动适配当前仓库的发布通道。
+  4. **文档与徽章校正 (`README.md` & `README_EN.md`)**：
+     - 同步替换 Release、Stars、License 徽标和下载链接为本仓库地址。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **界面零广告**：首页顶部广告卡片已彻底移除，界面清爽整洁；
+  - **身份完全归属**：所有关于信息、问题反馈与 Release 更新均准确指向 `TttXxx36/Codex--`；
+  - **测试全绿**：159 项自动化单元测试持续 100% 保持通过。
+
+---
+
 ### 【任务 02】渲染端全文档 DOM 监听收敛与流式吐字性能调优（待推进 ⏳）
 
 - **🎯 阶段计划 (Plan)**：
