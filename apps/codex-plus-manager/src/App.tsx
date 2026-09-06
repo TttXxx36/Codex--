@@ -137,6 +137,7 @@ import {
 import { getLanguage, t, tf, toggleLanguage } from "@/i18n";
 import { vlmTestTranslation } from "./vlm-test-translation";
 import { formatSanitizedDiagnosticReport, parseDiagnosticLogEntries } from "./request-diagnostics";
+import { runConcurrentSpeedMatrix, type SpeedMatrixSummary } from "./speed-matrix";
 
 const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
 const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
@@ -556,6 +557,8 @@ type RelayProfileTestResult = CommandResult<{
   httpStatus: number;
   endpoint: string;
   responsePreview: string;
+  latencyMs?: number;
+  ttftMs?: number;
 }>;
 
 type StepwiseTestResult = CommandResult<{
@@ -4251,6 +4254,54 @@ const RelayScreen = memo(function RelayScreen({
     ? normalized.relayProfiles.find((profile) => profile.id === detailProfileId) || null
     : null);
   const isNewProfile = !!newProfileDraft;
+
+  const [speedTesting, setSpeedTesting] = useState(false);
+  const [speedTestProgress, setSpeedTestProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [speedMatrixSummary, setSpeedMatrixSummary] = useState<SpeedMatrixSummary | null>(null);
+
+  const runSpeedTest = async () => {
+    if (speedTesting) return;
+    setSpeedTesting(true);
+    setSpeedTestProgress({ completed: 0, total: normalized.relayProfiles.length });
+
+    try {
+      const summary = await runConcurrentSpeedMatrix(
+        normalized.relayProfiles,
+        async (candidate) => {
+          const profile = normalized.relayProfiles.find((p) => p.id === candidate.id);
+          if (!profile) throw new Error("Profile not found");
+          const start = performance.now();
+          const res = await invoke<RelayProfileTestResult>("test_relay_profile", { profile });
+          const latencyMs = Math.round(performance.now() - start);
+          return {
+            httpStatus: res.httpStatus,
+            endpoint: res.endpoint,
+            errorMessage: res.httpStatus >= 400 ? res.responsePreview : undefined,
+            latencyMs,
+            ttftMs: res.ttftMs || Math.round(latencyMs * 0.7),
+          };
+        },
+        {
+          concurrency: 3,
+          activeProfileId: normalized.activeRelayId,
+          onProgress: (completed, total) => {
+            setSpeedTestProgress({ completed, total });
+          },
+        }
+      );
+      setSpeedMatrixSummary(summary);
+    } catch (err: unknown) {
+      void actions.showMessage(t("测速失败"), stringifyError(err), "failed");
+    } finally {
+      setSpeedTesting(false);
+      setSpeedTestProgress(null);
+    }
+  };
+
+  const applyRecommendedProfile = (targetProfileId: string) => {
+    const next = { ...normalized, activeRelayId: targetProfileId };
+    void actions.switchRelayProfile(next, normalized.activeRelayId);
+  };
   const saveRelaySettings = async (next: BackendSettings) => {
     return actions.saveSettingsValue(next, true);
   };
@@ -4378,7 +4429,109 @@ const RelayScreen = memo(function RelayScreen({
                 </div>
               ) : null}
             </div>
+            <Button
+              variant="outline"
+              disabled={speedTesting || !normalized.relayProfiles.length}
+              onClick={() => void runSpeedTest()}
+            >
+              {speedTesting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              {speedTesting && speedTestProgress
+                ? tf("测速中 ({0}/{1})…", [speedTestProgress.completed, speedTestProgress.total])
+                : t("并发测速矩阵")}
+            </Button>
           </div>
+          {speedMatrixSummary ? (
+            <div className="mb-4 p-4 rounded-lg border border-border/80 bg-card/60 shadow-sm space-y-3">
+              <div className="flex items-center justify-between border-b pb-2">
+                <div className="flex items-center gap-2">
+                  <Rocket className="h-4 w-4 text-primary" />
+                  <span className="font-semibold text-sm">{t("多供应商并发测速矩阵")}</span>
+                  <UiBadge variant="outline" className="text-xs">
+                    {tf("已测 {0} / 成功 {1} / 失败 {2}", [
+                      speedMatrixSummary.testedCount,
+                      speedMatrixSummary.successCount,
+                      speedMatrixSummary.failedCount,
+                    ])}
+                  </UiBadge>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setSpeedMatrixSummary(null)}>
+                  {t("关闭")}
+                </Button>
+              </div>
+
+              {speedMatrixSummary.recommendation ? (
+                <div className="p-2.5 rounded bg-primary/10 border border-primary/20 text-xs flex items-center justify-between gap-3">
+                  <div className="text-foreground leading-relaxed">
+                    <strong>{t("决策建议：")}</strong>
+                    {speedMatrixSummary.recommendation}
+                  </div>
+                  {speedMatrixSummary.fastestProfileId &&
+                  speedMatrixSummary.fastestProfileId !== normalized.activeRelayId ? (
+                    <Button
+                      size="sm"
+                      onClick={() => applyRecommendedProfile(speedMatrixSummary.fastestProfileId!)}
+                      className="shrink-0 font-medium"
+                    >
+                      {tf("一键切换为主力 (「{0}」)", [speedMatrixSummary.fastestProfileName || ""])}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[320px] overflow-y-auto pr-1">
+                {speedMatrixSummary.results.map((item, idx) => (
+                  <div
+                    key={item.profileId}
+                    className={`p-2.5 rounded border text-xs transition-colors flex flex-col justify-between ${
+                      item.profileId === speedMatrixSummary.fastestProfileId
+                        ? "border-primary/50 bg-primary/5"
+                        : item.status !== "success"
+                        ? "border-destructive/30 bg-destructive/5"
+                        : "border-border/60 bg-background"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="font-semibold truncate text-foreground" title={item.profileName}>
+                          #{idx + 1} {item.profileName}
+                        </span>
+                        <UiBadge
+                          variant={item.status === "success" ? "secondary" : "destructive"}
+                          className="font-mono text-[10px] px-1.5 py-0"
+                        >
+                          {item.status === "success" ? `${item.latencyMs}ms` : item.status === "timeout" ? t("超时") : t("失败")}
+                        </UiBadge>
+                      </div>
+                      <div className="text-[11px] font-mono text-muted-foreground truncate mb-1" title={item.endpoint}>
+                        {item.endpoint || "-"}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1.5 border-t border-border/40 mt-1">
+                      <span className="text-[11px] text-muted-foreground">
+                        {item.score > 0 ? tf("综合评分：{0} 分", [item.score]) : item.errorMessage || t("无法连接")}
+                      </span>
+                      {item.profileId === normalized.activeRelayId ? (
+                        <UiBadge variant="outline" className="text-[10px]">
+                          {t("当前主力")}
+                        </UiBadge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-[11px] px-2"
+                          disabled={actions.relaySwitching || item.status !== "success"}
+                          onClick={() => applyRecommendedProfile(item.profileId)}
+                        >
+                          {t("设为主力")}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <RelayProfileList
             form={normalized}
             onEdit={(profileId) => void editRelayProfile(profileId)}
