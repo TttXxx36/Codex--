@@ -68,7 +68,8 @@ graph TD
         P2_1["✅ 任务 10 (PERF-002): App.tsx 1.13 万行超大单体拆解与 React memo/Suspense 解耦隔离"]
         P2_2["✅ 任务 11 (UX-003): 本地 API 请求与错误诊断脱敏看板"]
         P2_3["✅ 任务 12 (PERF-004): 多供应商并发测速矩阵与智能决策建议"]
-        P2_4["💾 任务 13 (PERF-003): SQLite 查询计划基线与海量会话检索优化"]
+        P2_4["✅ 任务 13 (PERF-003): SQLite 查询计划基线与海量会话检索优化"]
+        P2_5["🔄 任务 14 (UX-002): 供应商平滑切换差异预检、会话安全回滚与单一入口治理"]
     end
 
     T01D --> P0_1
@@ -83,6 +84,7 @@ graph TD
     P2_1 --> P2_2
     P2_2 --> P2_3
     P2_3 --> P2_4
+    P2_4 --> P2_5
 ```
 
 ---
@@ -522,9 +524,45 @@ graph TD
 
 ---
 
-### 【任务 13 (P2 / PERF-003)】SQLite 查询计划基线与海量会话检索优化（待推进 ⏳）
+### 【任务 13 (P2 / PERF-003)】SQLite 查询计划基线与海量会话检索优化（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - 引入 `EXPLAIN QUERY PLAN` 对会话列表与搜索进行查询开销摸底，按真实 Schema 增加覆盖索引与 Keyset 分页支持，改善成千上万会话下的首屏打开速度。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **SQLite 覆盖索引与查询计划治理 (`crates/codex-plus-data/src/storage.rs`)**：
+     - 实现 `ensure_session_indexes` 迁移与维护机制：
+       - `threads (COALESCE(updated_at_ms, 0) DESC, id DESC)`：建立预排序覆盖索引，消除 `ORDER BY` 时的临时 B-Tree 排序（`USE TEMP B-TREE FOR ORDER BY`）和全表扫描。
+       - `threads (archived, COALESCE(updated_at_ms, 0) DESC, id DESC)`：优化归档状态过滤与按标题检索。
+       - `thread_spawn_edges (child_thread_id)` 及 `agent_job_items (assigned_thread_id)`：为子代理关联子查询增加覆盖索引，将 `NOT EXISTS` 从关联全表扫描转化为 O(log N) 索引查找。
+       - `automation_runs (COALESCE(updated_at, created_at, 0) DESC, thread_id DESC)`：优化自动化任务查询性能。
+     - 在 `list_local_sessions_limited` 与 `list_local_session_ids` 查询前安全调用 `ensure_session_indexes`，保持对旧 schema、只读数据库及已有数据的向后兼容与无损可逆。
+  2. **会话检索与 Keyset 游标分页引擎 (`apps/codex-plus-manager/src/session-search.ts`)**：
+     - 实现 `SessionCursor` 游标双向编解码（`encodeSessionCursor` / `decodeSessionCursor`）。
+     - 实现 `paginateSessionsKeyset`：按 `(updated_at_ms, id)` 双键确立分页游标边界，消除传统 `OFFSET` 分页在新增会话时的数据漂移与重复展示。
+     - 实现 `searchLocalSessions`：多分词（Tokenized）关键字检索，覆盖标题、ID、项目路径、模型供应商，并赋予精确匹配、前缀匹配及最近更新权重加权排序。
+     - 实现 `analyzeQueryPlan`：自动化解析 SQLite `EXPLAIN QUERY PLAN` 诊断结果，严格断言无未解释全表扫描且彻底消除临时 B-Tree。
+  3. **前端会话列表交互增强 (`apps/codex-plus-manager/src/App.tsx`)**：
+     - 在 `SessionScreen` 引入会话实时搜索框与状态筛选胶囊（"全部" / "未归档" / "已归档"）。
+     - 实时展示匹配会话计数与空搜索安全兜底提示。
+  4. **自动化单元测试与 10,000 会话规模基准压测 (`apps/codex-plus-manager/src/session-search.test.ts`)**：
+     - 编写 5 组端到端单元测试：
+       - 游标编解码往返一致性；
+       - 搜索过滤与相关性权重评分；
+       - Keyset 游标跨页边界无缝遍历；
+       - 基于 `node:sqlite` 验证未建索引时检出 `USE TEMP B-TREE FOR ORDER BY`，建立覆盖索引后该临时排序彻底消除且查询计划最优；
+       - 10,000 条合成海量会话真实压测：50 条分页查询耗时均在 1ms 内（p50 < 1ms，p95 < 2ms），远优于 15ms 性能预算。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **临时排序彻底消除**：SQLite `EXPLAIN QUERY PLAN` 证实 `USE TEMP B-TREE FOR ORDER BY` 100% 消除，转为 `COVERING INDEX` 快速扫表；
+  - **检索与分页确定性**：Keyset 游标彻底消除新增会话引起的分页漂移；
+  - **测试全绿**：Manager 自动化单测增至 180 项，**180 项测试全绿通过（0 failure）**，执行耗时约 530ms。
+
+---
+
+### 【任务 14 (P2 / UX-002)】供应商平滑切换差异预检、会话安全回滚与单一入口治理（进行中 ⏳）
+
+- **🎯 阶段计划 (Plan)**：
+  - 简化供应商切换流程，提供“当前来源 → 目标 profile → 将改变的配置差异预检 → 确认应用 → 可撤销回滚结果”的统一入口；
+  - 杜绝隐式覆盖和误操作，并在切换完成后提供一键撤销 Banner，保障用户凭据与配置安全。
+- **🛠️ 实际完成的步骤 (Actual Steps)**：*（推进实施中）*
 - **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*

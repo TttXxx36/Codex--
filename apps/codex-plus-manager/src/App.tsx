@@ -138,6 +138,7 @@ import { getLanguage, t, tf, toggleLanguage } from "@/i18n";
 import { vlmTestTranslation } from "./vlm-test-translation";
 import { formatSanitizedDiagnosticReport, parseDiagnosticLogEntries } from "./request-diagnostics";
 import { runConcurrentSpeedMatrix, type SpeedMatrixSummary } from "./speed-matrix";
+import { searchLocalSessions } from "./session-search";
 
 const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
 const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
@@ -6007,12 +6008,20 @@ const SessionsScreen = memo(function SessionsScreen({
   const activeCount = items.filter((item) => !item.archived).length;
   const archivedCount = items.length - activeCount;
   const totalCount = sessions?.totalCount ?? items.length;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
+  const filteredItems = useMemo(() => {
+    return searchLocalSessions(items, {
+      query: searchQuery,
+      filterStatus: statusFilter,
+    });
+  }, [items, searchQuery, statusFilter]);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  const selectedSessions = useMemo(() => items.filter((session) => selectedSessionIds.has(session.id)), [items, selectedSessionIds]);
+  const selectedSessions = useMemo(() => filteredItems.filter((session) => selectedSessionIds.has(session.id)), [filteredItems, selectedSessionIds]);
   const selectedCount = selectedSessions.length;
-  const allSelected = items.length > 0 && selectedCount === items.length;
+  const allSelected = filteredItems.length > 0 && selectedCount === filteredItems.length;
 
   useEffect(() => {
     const itemIds = new Set(items.map((session) => session.id));
@@ -6177,8 +6186,45 @@ const SessionsScreen = memo(function SessionsScreen({
         <CardContent className="session-list-content">
           {items.length ? (
             <>
+              <div className="session-search-bar" style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
+                <div style={{ position: "relative", flex: 1 }}>
+                  <Search className="h-4 w-4" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", opacity: 0.5 }} />
+                  <Input
+                    placeholder={t("搜索会话标题、ID、路径或模型...")}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ paddingLeft: "32px" }}
+                  />
+                </div>
+                <div className="session-filter-group" style={{ display: "flex", gap: "4px" }}>
+                  <Button
+                    size="sm"
+                    variant={statusFilter === "all" ? "default" : "outline"}
+                    onClick={() => setStatusFilter("all")}
+                  >
+                    {t("全部")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusFilter === "active" ? "default" : "outline"}
+                    onClick={() => setStatusFilter("active")}
+                  >
+                    {t("未归档")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={statusFilter === "archived" ? "default" : "outline"}
+                    onClick={() => setStatusFilter("archived")}
+                  >
+                    {t("已归档")}
+                  </Button>
+                </div>
+              </div>
               <div className="session-list-toolbar">
-                <span className="session-selection-summary">{t("已选择")} {selectedCount} / {items.length} {t("个会话")}</span>
+                <span className="session-selection-summary">
+                  {t("已选择")} {selectedCount} / {filteredItems.length} {t("个会话")}
+                  {(searchQuery || statusFilter !== "all") ? ` (${t("共")} ${items.length} ${t("个")})` : ""}
+                </span>
                 <div className="session-selection-actions">
                   <Button disabled={allSelected || bulkDeleting} onClick={selectAllSessions} size="sm" variant="outline">
                     {t("全选当前列表")}
@@ -6192,39 +6238,43 @@ const SessionsScreen = memo(function SessionsScreen({
                   </Button>
                 </div>
               </div>
-              <div className="session-list">
-                {items.map((session) => {
-                  const selected = selectedSessionIds.has(session.id);
-                  return (
-                    <div className="session-row" data-selection-mode={selectionMode} data-selected={selected} key={session.id}>
-                      {selectionMode ? (
-                        <label className="session-select" title={t("选择会话")}>
-                          <input
-                            aria-label={tf("选择会话 {0}", [session.title || session.id])}
-                            checked={selected}
-                            onChange={(event) => toggleSessionSelection(session.id, event.currentTarget.checked)}
-                            type="checkbox"
-                          />
-                        </label>
-                      ) : null}
-                      <div className="session-main">
-                        <strong>{session.title || t("未命名会话")}</strong>
-                        <span>{session.id}</span>
-                        <small>{session.cwd || t("未记录项目路径")}</small>
+              {filteredItems.length ? (
+                <div className="session-list">
+                  {filteredItems.map((session) => {
+                    const selected = selectedSessionIds.has(session.id);
+                    return (
+                      <div className="session-row" data-selection-mode={selectionMode} data-selected={selected} key={session.id}>
+                        {selectionMode ? (
+                          <label className="session-select" title={t("选择会话")}>
+                            <input
+                              aria-label={tf("选择会话 {0}", [session.title || session.id])}
+                              checked={selected}
+                              onChange={(event) => toggleSessionSelection(session.id, event.currentTarget.checked)}
+                              type="checkbox"
+                            />
+                          </label>
+                        ) : null}
+                        <div className="session-main">
+                          <strong>{session.title || t("未命名会话")}</strong>
+                          <span>{session.id}</span>
+                          <small>{session.cwd || t("未记录项目路径")}</small>
+                        </div>
+                        <div className="session-meta">
+                          <Badge status={session.archived ? "archived" : "ok"} />
+                          <span>{session.modelProvider || t("provider 未记录")}</span>
+                          <span>{formatTime(session.updatedAtMs ?? 0)}</span>
+                        </div>
+                        <Button className="session-delete-button" variant="outline" onClick={() => void actions.deleteLocalSession(session)}>
+                          <Trash2 className="h-4 w-4" />
+                          {t("删除")}
+                        </Button>
                       </div>
-                      <div className="session-meta">
-                        <Badge status={session.archived ? "archived" : "ok"} />
-                        <span>{session.modelProvider || t("provider 未记录")}</span>
-                        <span>{formatTime(session.updatedAtMs ?? 0)}</span>
-                      </div>
-                      <Button className="session-delete-button" variant="outline" onClick={() => void actions.deleteLocalSession(session)}>
-                        <Trash2 className="h-4 w-4" />
-                        {t("删除")}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty">{t("未找到符合搜索条件的本地会话。")}</div>
+              )}
               <div className="session-pagination">
                 <Button
                   aria-label={t("上一页")}

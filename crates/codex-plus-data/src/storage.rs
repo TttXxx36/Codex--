@@ -140,6 +140,54 @@ fn codex_thread_filter(db: &Connection) -> anyhow::Result<String> {
     })
 }
 
+pub fn ensure_session_indexes(db: &Connection) -> anyhow::Result<()> {
+    if has_table(db, "threads")? {
+        let columns = table_columns(db, "threads")?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        if columns.contains("updated_at_ms") {
+            let _ = db.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_threads_updated_at_id ON threads (COALESCE(updated_at_ms, 0) DESC, id DESC);"
+            );
+        } else if columns.contains("updated_at") {
+            let _ = db.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_threads_updated_at_id ON threads (COALESCE(updated_at * 1000, 0) DESC, id DESC);"
+            );
+        }
+        if columns.contains("archived") {
+            let _ = db.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_threads_archived_updated_at ON threads (archived, COALESCE(updated_at_ms, 0) DESC, id DESC);"
+            );
+        }
+    }
+    if has_table(db, "thread_spawn_edges")? {
+        let columns = table_columns(db, "thread_spawn_edges")?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        if columns.contains("child_thread_id") {
+            let _ = db.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_thread_spawn_edges_child ON thread_spawn_edges (child_thread_id);"
+            );
+        }
+    }
+    if has_table(db, "agent_job_items")? {
+        let columns = table_columns(db, "agent_job_items")?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        if columns.contains("assigned_thread_id") {
+            let _ = db.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_agent_job_items_assigned ON agent_job_items (assigned_thread_id);"
+            );
+        }
+    }
+    if has_table(db, "automation_runs")? {
+        let _ = db.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_automation_runs_updated ON automation_runs (COALESCE(updated_at, created_at, 0) DESC, thread_id DESC);"
+        );
+    }
+    Ok(())
+}
+
 fn sqlite_limit(limit: usize) -> i64 {
     i64::try_from(limit).unwrap_or(i64::MAX)
 }
@@ -244,6 +292,7 @@ impl SQLiteStorageAdapter {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
+        let _ = ensure_session_indexes(&db);
         match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => self.list_codex_threads(&db, limit),
             Some(SchemaKind::CodexAutomationRuns) => self.list_codex_automation_runs(&db, limit),
@@ -256,6 +305,7 @@ impl SQLiteStorageAdapter {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
+        let _ = ensure_session_indexes(&db);
         let (table, id_column, filter) = match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => ("threads", "id", codex_thread_filter(&db)?),
             Some(SchemaKind::CodexAutomationRuns) => (

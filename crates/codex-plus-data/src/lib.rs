@@ -17,4 +17,4 @@ pub use provider_sync::{
     run_remote_control_session_finalization_for_thread_with_target,
     try_acquire_provider_sync_lifecycle_guard,
 };
-pub use storage::{LocalSession, SQLiteStorageAdapter, delete_local_from_paths};
+pub use storage::{LocalSession, SQLiteStorageAdapter, delete_local_from_paths, ensure_session_indexes};
