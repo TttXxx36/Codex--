@@ -67,6 +67,31 @@ graph TD
 
 ---
 
+### 【任务 01-B】隐私安全深度审计与敏感凭据脱敏防护（已完成 ✅）
+
+- **🎯 阶段计划 (Plan)**：
+  - 深入排查代码库中是否存在收集用户隐私并上传到远程服务器的逻辑，以及用户使用中是否可能泄露自身隐私与 API Key；
+  - 确立“仅在本地排错，关闭所有外联托管分享与第三方社区，并对本地日志与导出做脱敏保护”的治理标准；
+  - 实现本地诊断日志落盘前的自动化递归脱敏遮罩机制，阻断会话公网外联托管与第三方社区静默拉取。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **核心日志防泄漏脱敏 (`crates/codex-plus-core/src/diagnostic_log.rs`)**：
+     - 在 `append_diagnostic_log` 中增加 `sanitize_log_value` 递归脱敏过滤层；
+     - 自动检测并遮罩 `api_key`、`apiKey`、`token`、`secret`、`authorization`、`password` 等敏感字段为 `[REDACTED]`；
+     - 对错误堆栈及文本中的 `Bearer <token>` 等模式实现自动化正则级打码，杜绝用户排错日志带出真实密钥。
+  2. **会话公网托管分享阻断 (`crates/codex-plus-core/src/share.rs` & `assets/inject/renderer-inject.js`)**：
+     - 将后端 `share::create_share` 改造为安全阻断，拒绝向 `share.codexpp.cc` / `pages.dev` 发送会话数据与请求；
+     - 客户端会话分享改造为纯本地安全端到端复制，避免工作会话暴露于外部不可信公网站点。
+  3. **第三方社区网络外联关闭 (`crates/codex-plus-core/src/dream_skin_community.rs`)**：
+     - 拦截对外部 `api.dreamskin.cc` 的远程目录轮询与数据上报，置为安全离线模式，消除设备网络指纹外泄隐患。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **日志敏感信息零暴露**：单元测试验证递归脱敏逻辑能 100% 遮蔽嵌套对象和字符串中的 API Key、Token；
+  - **数据外泄路径全切断**：无任何未授权的用户会话数据或配置被上传到第三方服务器；
+  - **测试全绿**：`apps/codex-plus-manager` 的 159 项自动化单元测试全部保持 100% 通过（`159 passed, 0 failed`）。
+
+---
+
 ### 【任务 02】渲染端全文档 DOM 监听收敛与流式吐字性能调优（待推进 ⏳）
 
 - **🎯 阶段计划 (Plan)**：

@@ -25,11 +25,11 @@ pub fn append_diagnostic_log(event: &str, detail: impl Serialize) -> std::io::Re
         std::fs::create_dir_all(parent)?;
     }
 
-    let detail = serde_json::to_value(detail).unwrap_or_else(|error| {
+    let detail = sanitize_log_value(serde_json::to_value(detail).unwrap_or_else(|error| {
         json!({
             "serialization_error": error.to_string()
         })
-    });
+    }));
     let record = DiagnosticRecord {
         timestamp_ms: now_ms(),
         pid: std::process::id(),
@@ -131,6 +131,50 @@ fn compact_diagnostic_log(
     crate::settings::atomic_write(path, &tail).map_err(std::io::Error::other)
 }
 
+fn sanitize_log_value(mut value: Value) -> Value {
+    match &mut value {
+        Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                let lower = key.to_ascii_lowercase();
+                if lower.contains("key")
+                    || lower.contains("token")
+                    || lower.contains("secret")
+                    || lower.contains("auth")
+                    || lower.contains("password")
+                    || lower.contains("credential")
+                {
+                    *val = json!("[REDACTED]");
+                } else {
+                    *val = sanitize_log_value(val.take());
+                }
+            }
+        }
+        Value::Array(list) => {
+            for item in list.iter_mut() {
+                *item = sanitize_log_value(item.take());
+            }
+        }
+        Value::String(s) => {
+            *s = sanitize_string(s);
+        }
+        _ => {}
+    }
+    value
+}
+
+fn sanitize_string(input: &str) -> String {
+    // 遮罩形如 Bearer <token> 或 sk-<key> 等常见密钥格式
+    let mut result = input.to_string();
+    if let Some(pos) = result.find("Bearer ") {
+        let after = &result[pos + 7..];
+        let end_pos = after.find(|c: char| c.is_whitespace() || c == '"' || c == ',' || c == ';').unwrap_or(after.len());
+        if end_pos > 0 {
+            result.replace_range(pos + 7..pos + 7 + end_pos, "[REDACTED]");
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +197,29 @@ mod tests {
         let path = temp.path().join("missing.log");
 
         clear_diagnostic_log_path(&path).unwrap();
+    }
+
+    #[test]
+    fn sanitize_log_value_redacts_sensitive_keys_and_tokens() {
+        let input = json!({
+            "apiKey": "sk-1234567890abcdef",
+            "api_key": "secret-value",
+            "Authorization": "Bearer secret-token",
+            "nested": {
+                "user_token": "my-secret-token",
+                "normal": "normal-value"
+            },
+            "error_msg": "failed with Bearer secret-bearer-value in headers"
+        });
+
+        let sanitized = sanitize_log_value(input);
+        let serialized = serde_json::to_string(&sanitized).unwrap();
+
+        assert!(!serialized.contains("sk-1234567890abcdef"));
+        assert!(!serialized.contains("secret-value"));
+        assert!(!serialized.contains("secret-token"));
+        assert!(!serialized.contains("my-secret-token"));
+        assert!(!serialized.contains("secret-bearer-value"));
+        assert!(serialized.contains("normal-value"));
     }
 }

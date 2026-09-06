@@ -98,40 +98,16 @@ pub async fn load_community_catalog(state_dir: &Path) -> anyhow::Result<DreamSki
 }
 
 pub async fn fetch_community_catalog() -> anyhow::Result<DreamSkinCommunityCatalog> {
-    let client = community_http_client(Duration::from_secs(30))?;
-    let mut items = Vec::new();
-    let mut offset = 0usize;
-    loop {
-        let url = format!(
-            "{COMMUNITY_API_ORIGIN}/v1/themes?limit={PAGE_SIZE}&offset={offset}&sort=recent"
-        );
-        let bytes =
-            download_limited(&client, &url, CATALOG_BYTES_LIMIT, "application/json").await?;
-        let page: CommunityPage =
-            serde_json::from_slice(&bytes).context("DreamSkin 社区清单不是有效 JSON")?;
-        let page_total = page.total.min(CATALOG_LIMIT);
-        let count = page.items.len();
-        items.extend(page.items);
-        if count == 0 || items.len() >= page_total || items.len() >= CATALOG_LIMIT {
-            break;
-        }
-        offset = items.len();
-    }
-    items.truncate(CATALOG_LIMIT);
-    let (items, skipped) = normalize_and_filter_catalog(items);
-    let warning = (skipped > 0)
-        .then(|| format!("已跳过 {skipped} 个元数据无效的 DreamSkin 社区主题。"))
-        .unwrap_or_default();
     Ok(DreamSkinCommunityCatalog {
-        total: items.len(),
-        items,
+        total: 0,
+        items: Vec::new(),
         fetched_at: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
             .to_string(),
         cached: false,
-        warning,
+        warning: "出于隐私与安全保护，第三方在线社区已处于离线保护状态。".to_string(),
         installed_theme_id: String::new(),
     })
 }

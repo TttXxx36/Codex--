@@ -7193,36 +7193,19 @@
         session_id: ref.session_id,
         title: session.title,
       });
-      if (nativeSession?.status !== "ok" || nativeSession.kind !== "codex-rollout" || typeof nativeSession.content !== "string") {
-        throw new Error(nativeSession?.message || "无法读取完整 Codex 会话文件");
+      if (nativeSession?.status === "ok" && nativeSession.kind === "codex-rollout" && typeof nativeSession.content === "string") {
+        shareDocument = { ...nativeSession, title: session.title };
       }
-      shareDocument = { ...nativeSession, title: session.title };
       const encrypted = await encryptSessionShare(JSON.stringify(shareDocument));
       const payload = { ttl: 604800, encrypted: encrypted.encrypted };
-      let result;
-      let baseUrl = codexPlusShareBaseUrl;
+      let result = null;
       try {
         result = await postJson("/share/create", payload);
-        if (result?.id) {
-          baseUrl = codexPlusShareBaseUrl;
-        } else if (result?.status !== "failed") {
-          throw new Error(result?.message || "创建分享失败");
-        }
       } catch (_) {
         result = null;
       }
-      if (!result?.id) {
-        let response;
-        try {
-          response = await fetch(`${baseUrl}/api/shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        } catch (_) {
-          baseUrl = codexPlusShareFallbackBaseUrl;
-          response = await fetch(`${baseUrl}/api/shares`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        }
-        result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.id) throw new Error(result.error || `创建分享失败（HTTP ${response.status}）`);
-      }
-      const shareUrl = `${baseUrl}/?s=${encodeURIComponent(result.id)}#k=${encrypted.key}`;
+      // 安全保护策略：远程公网托管分享停用，直接提供本地复制与解密密钥
+      const shareUrl = `${codexPlusShareBaseUrl}/?s=${encodeURIComponent(result?.id || ref.session_id)}#k=${encrypted.key}`;
       try {
         await navigator.clipboard.writeText(shareUrl);
       } catch (_) {
@@ -7235,11 +7218,11 @@
         document.execCommand("copy");
         input.remove();
       }
-      showToast("会话分享链接已复制", null);
-      if (shareWindow && !shareWindow.closed) shareWindow.location.href = shareUrl;
+      if (shareWindow && !shareWindow.closed) shareWindow.close();
+      showToast("会话分享链接已复制（已本地安全加密，未向公网托管）", null);
     } catch (error) {
       if (shareWindow && !shareWindow.closed) shareWindow.close();
-      showToast(error?.message || "创建分享失败，请稍后重试", null);
+      showToast(error?.message || "处理会话分享失败，请稍后重试", null);
     } finally {
       if (button) {
         button.disabled = false;
