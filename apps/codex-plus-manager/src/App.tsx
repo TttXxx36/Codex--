@@ -71,7 +71,7 @@ import {
 } from "lucide-react";
 import { ProviderPresetSelector } from "@/components/ProviderPresetSelector";
 import type { PresetPatch } from "@/components/ProviderPresetSelector";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { Badge as UiBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1003,6 +1003,14 @@ const defaultSettings: BackendSettings = {
   activeAggregateRelayId: "",
   relayTestModel: "gpt-5.4-mini",
 };
+function ScreenLoadingFallback() {
+  return (
+    <div className="flex h-64 items-center justify-center gap-2 text-muted-foreground">
+      <RefreshCw className="h-5 w-5 animate-spin" />
+      <span>{t("加载中...")}</span>
+    </div>
+  );
+}
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => loadInitialTheme());
@@ -3313,7 +3321,8 @@ export function App() {
           </div>
         </header>
         <section className="screen" key={route}>
-          {route === "overview" ? (
+          <Suspense fallback={<ScreenLoadingFallback />}>
+            {route === "overview" ? (
             <OverviewScreen
               overview={overview}
               pluginMarketplaceProgress={pluginMarketplaceProgress}
@@ -3436,6 +3445,7 @@ export function App() {
               actions={actions}
             />
           ) : null}
+          </Suspense>
         </section>
       </main>
       {notice ? (
@@ -3772,7 +3782,7 @@ function SearchableSessionPicker({
   );
 }
 
-function WeixinConnectScreen({
+const WeixinConnectScreen = memo(function WeixinConnectScreen({
   form,
   status,
   qr,
@@ -4067,9 +4077,9 @@ function WeixinConnectScreen({
       </Panel>
     </div>
   );
-}
+});
 
-function OverviewScreen({
+const OverviewScreen = memo(function OverviewScreen({
   overview,
   pluginMarketplaceProgress,
   actions,
@@ -4137,9 +4147,9 @@ function OverviewScreen({
       </Panel>
     </>
   );
-}
+});
 
-function RelayEnvironmentScreen({ result, actions }: { result: RelayEnvironmentResult | null; actions: Actions }) {
+const RelayEnvironmentScreen = memo(function RelayEnvironmentScreen({ result, actions }: { result: RelayEnvironmentResult | null; actions: Actions }) {
   const proxyVariables = result?.proxyEnvironment.variables ?? [];
   const proxyVariableLabels = proxyVariables.map((item) => {
     const source = item.source === "user" ? t("用户环境") : item.source === "system" ? t("系统环境") : t("进程环境");
@@ -4211,9 +4221,9 @@ function RelayEnvironmentScreen({ result, actions }: { result: RelayEnvironmentR
       </CardContent>
     </Panel>
   );
-}
+});
 
-function RelayScreen({
+const RelayScreen = memo(function RelayScreen({
   settings: _settings,
   relayFiles,
   envConflicts,
@@ -4375,7 +4385,7 @@ function RelayScreen({
       </Panel>
     </>
   );
-}
+});
 
 function EnvConflictNotice({
   envConflicts,
@@ -4424,7 +4434,7 @@ function envConflictSourceLabel(source: string): string {
   return source || t("环境变量");
 }
 
-function EnhanceScreen({
+const EnhanceScreen = memo(function EnhanceScreen({
   dirty,
   form,
   pluginMarketplaceProgress,
@@ -4595,9 +4605,9 @@ function EnhanceScreen({
       </Panel>
     </>
   );
-}
+});
 
-function DreamSkinScreen({
+const DreamSkinScreen = memo(function DreamSkinScreen({
   form,
   library,
   market,
@@ -5234,7 +5244,7 @@ function DreamSkinScreen({
       </Panel>
     </>
   );
-}
+});
 
 function DreamSkinColorField({
   label,
@@ -5550,7 +5560,7 @@ function dreamSkinStateLabel(state: "pass" | "warning" | "fail" | "not_running")
   return t("Codex 未运行或不可连接");
 }
 
-function ZedRemoteScreen({
+const ZedRemoteScreen = memo(function ZedRemoteScreen({
   projects,
   form,
   onFormChange,
@@ -5628,7 +5638,7 @@ function ZedRemoteScreen({
       <ZedRemoteProjectSection title="Discovered from Codex" projects={discoveredProjects} actions={actions} onCopyUrl={copyUrl} />
     </>
   );
-}
+});
 
 function ZedRemoteProjectSection({
   title,
@@ -5691,7 +5701,7 @@ function ZedRemoteProjectSection({
   );
 }
 
-function UserScriptsScreen({ settings, market, actions }: { settings: SettingsResult | null; market: ScriptMarketResult | null; actions: Actions }) {
+const UserScriptsScreen = memo(function UserScriptsScreen({ settings, market, actions }: { settings: SettingsResult | null; market: ScriptMarketResult | null; actions: Actions }) {
   const inventory = settings?.user_scripts;
   const scripts = inventory?.scripts ?? [];
   const marketScripts = market?.market.scripts ?? [];
@@ -5809,9 +5819,9 @@ function UserScriptsScreen({ settings, market, actions }: { settings: SettingsRe
       </Panel>
     </>
   );
-}
+});
 
-function SessionsScreen({
+const SessionsScreen = memo(function SessionsScreen({
   settings,
   form,
   sessions,
@@ -6088,9 +6098,9 @@ function SessionsScreen({
       </Panel>
     </>
   );
-}
+});
 
-function MaintenanceScreen({
+const MaintenanceScreen = memo(function MaintenanceScreen({
   overview,
   watcher,
   settings,
@@ -6207,9 +6217,9 @@ function MaintenanceScreen({
       </Panel>
     </>
   );
-}
+});
 
-function AboutScreen({
+const AboutScreen = memo(function AboutScreen({
   overview,
   update,
   updateInstallProgress,
@@ -6269,9 +6279,9 @@ function AboutScreen({
       <DiagnosticsPanel diagnostics={diagnostics} actions={actions} />
     </>
   );
-}
+});
 
-function SettingsScreen({
+const SettingsScreen = memo(function SettingsScreen({
   dirty,
   settings,
   theme,
@@ -6509,7 +6519,7 @@ function SettingsScreen({
       ) : null}
     </div>
   );
-}
+});
 
 function LogsPanel({ logs, actions }: { logs: LogsResult | null; actions: Actions }) {
   const lines = splitLogLines(logs?.text ?? "");
@@ -7026,7 +7036,7 @@ function RelayProfileDetail({
   );
 }
 
-function ContextScreen({
+const ContextScreen = memo(function ContextScreen({
   form,
   liveEntries,
   relayFiles,
@@ -7053,7 +7063,7 @@ function ContextScreen({
       </CardContent>
     </Panel>
   );
-}
+});
 
 function RelayProfileEditor({
   profile,

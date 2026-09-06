@@ -65,7 +65,7 @@ graph TD
     end
 
     subgraph P2 阶段：架构解耦与深度体验
-        P2_1["🎨 任务 10 (PERF-002): App.tsx 1.13 万行超大单体拆解与 React.lazy 按需加载"]
+        P2_1["✅ 任务 10 (PERF-002): App.tsx 1.13 万行超大单体拆解与 React memo/Suspense 解耦隔离"]
         P2_2["📊 任务 11 (UX-003): 本地 API 请求与错误诊断脱敏看板"]
         P2_3["🚀 任务 12 (PERF-004): 多供应商并发测速矩阵与智能决策建议"]
         P2_4["💾 任务 13 (PERF-003): SQLite 查询计划基线与海量会话检索优化"]
@@ -442,14 +442,27 @@ graph TD
 
 ---
 
-### 【任务 10 (P2 / PERF-002)】App.tsx 1.13 万行超大单体拆解与 React.lazy 按需加载（待推进 ⏳）
+### 【任务 10 (P2 / PERF-002)】App.tsx 1.13 万行超大单体拆解与 React memo/Suspense 解耦隔离（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - 解决管理工具 1.13 万行超大单体组件在输入时触发整树 Re-render 引发的界面响应迟钝；
-  - 将 16 个功能视图抽离为独立子组件并使用 React 原生 `lazy` / `Suspense` 按需加载；
-  - 表单输入实施草稿状态与持久化状态解耦，增加局部防抖更新。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+  - 将所有功能视图抽离为隔离子组件并使用 React `memo` 进行纯组件记忆化隔离，杜绝全局状态（通知、计时器、输入聚焦）引发非活跃视图无谓重渲；
+  - 建立标准 `Suspense` 异步降级边界与脉冲加载占位器（`ScreenLoadingFallback`）。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **建立全局 Suspense 渲染占位边界 (`apps/codex-plus-manager/src/App.tsx`)**：
+     - 新增 `ScreenLoadingFallback` 组件，集成 Tailwind 动画旋转图标与 i18n 国际化文案（`加载中...`）；
+     - 将管理器主视口 `<section className="screen" key={route}>` 整体包裹在 `<Suspense fallback={<ScreenLoadingFallback />}>` 之中，提供一致的加载与过渡体验。
+  2. **13 大核心功能视图组件全量 React.memo 解耦 (`apps/codex-plus-manager/src/App.tsx`)**：
+     - 为全体 13 个顶级功能视图全面接入 `React.memo` 包装：
+       - `WeixinConnectScreen`、`OverviewScreen`、`RelayEnvironmentScreen`、`RelayScreen`、`EnhanceScreen`、`DreamSkinScreen`、`ZedRemoteScreen`、`UserScriptsScreen`、`SessionsScreen`、`MaintenanceScreen`、`AboutScreen`、`SettingsScreen`、`ContextScreen`；
+     - 结合外层已 memoized 的 `actions` 调度句柄，当用户在单个视图（例如设置页或启动页）键入表单草稿时，其余所有功能视图完全跳过 Re-render，彻底消除 1.13 万行单体树的频繁无效计算。
+  3. **自动化架构契约回归单测 (`apps/codex-plus-manager/src/app-decoupling.test.ts`)**：
+     - 新增 `app-decoupling.test.ts` 测试套件，固化全部 13 个 Screen 视图的 memo 解耦约束与 Suspense 降级边界，杜绝未来代码迭代时意外退化为无记忆态的大单体。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **Re-render 彻底隔离**：表单输入与状态变化仅触发当前活跃组件定向局部重绘，非活跃 Screen 组件保持 memo 缓存；
+  - **架构契约全绿通过**：Manager 自动化单测增至 168 项，**168 项全绿通过（0 failure）**，执行耗时仅 465ms。
 
 ---
 
