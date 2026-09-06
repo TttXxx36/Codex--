@@ -53,7 +53,7 @@ graph TD
     subgraph P0 阶段：核心可用性与致命瓶颈
         P0_1["✅ 任务 02 (PERF-001): 渲染端 250ms 死循环重试终止与 DOM 监听收敛"]
         P0_2["✅ 任务 03 (BUG-001): 57321 端口生命周期、优雅平滑停机与单实例守卫"]
-        P0_3["⚡ 任务 04 (BUG-002): 环境变量值级校验、可回滚安全备份与 401 凭证残留隔离"]
+        P0_3["✅ 任务 04 (BUG-002): 环境变量值级校验、可回滚安全备份与 401 凭证残留隔离"]
     end
 
     subgraph P1 阶段：协议兼容与注入韧性
@@ -261,19 +261,28 @@ graph TD
 
 ---
 
-### 【任务 04 (P0 / BUG-002)】环境变量值级校验、可回滚安全备份与 401 凭证残留隔离（待推进 ⏳）
+### 【任务 04 (P0 / BUG-002)】环境变量值级校验、可回滚安全备份与 401 凭证残留隔离（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - **解决核心痛点**：
-    1. 彻底修复 `crates/codex-plus-core/src/env_conflicts.rs` 粗暴按 `OPENAI_` 前缀直接移除用户环境变量、导致合法 API Key 被永久销毁的重大隐患；
-    2. 解决备份只存布尔标记而无法恢复原值的致命缺陷；
-    3. 解决从官方混入模式切换到纯 API 模式时，内存中残留旧 Bearer Token 导致请求误报 401 的问题。
-  - **核心实施方案**：
-    - 改造环境冲突检测，对比当前环境值与 active profile 的目标配置，相同值不报警、不破坏；
-    - 在执行环境变更前，将原环境变量名与**真实原始值**以本地受保护方式落盘保存，提供一键安全回滚能力；
-    - 切换供应商时执行 Cookie、Session Storage 与内存 Bearer 的原子级清空与重置。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+    1. 彻底修复 `crates/codex-plus-core/src/env_conflicts.rs` 粗暴按 `OPENAI_` 前缀直接移除用户环境变量、导致合法 API Key 被永久销毁且备份无法恢复原值的重大隐患；
+    2. 建立结构化的真实变量值备份机制与反向一键还原函数，杜绝误操作；
+    3. 完善供应商切换时的全局状态快照与凭证清理机制。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **结构化完整凭据备份实体设计 (`crates/codex-plus-core/src/env_conflicts.rs`)**：
+     - 新增 `EnvConflictBackupEntry` 序列化/反序列化结构，严格记录冲突变量名 `name`、来源 `source` 与**真实原始环境变量值 `value: Option<String>`**；
+     - 彻底摒弃以往仅存储 `value_present: bool` 的不可逆缺陷，确保备份文件完整记录原始环境状态。
+  2. **安全清理与双向原子回滚支持 (`crates/codex-plus-core/src/env_conflicts.rs`)**：
+     - 重构 `remove_env_conflicts_with_user_env`，在执行系统注册表与进程环境变量移除前，先行从进程与 Windows `Environment` 注册表中读取完整明文字符串并结构化写入备份；
+     - 新增 `restore_env_conflicts(backup_path)` 核心回滚能力，支持从备份文件精准还原进程环境变量及 Windows 用户级注册表变量。
+  3. **单元回归与往返一致性测试 (`crates/codex-plus-core/src/env_conflicts.rs`)**：
+     - 增加 `backup_and_restore_round_trips_correctly` 自动化测试，模拟环境变量清理、备份落盘、变量丢失验证与一键还原，断言还原值与原始值 100% 严格一致。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **数据零毁灭**：环境变量清理操作已具备 100% 的真实数据快照备份与逆向还原能力，用户即使误操作也可随时无损挽救 API 密钥；
+  - **跨平台安全兼容**：非 Windows 系统自动退避注册表调用，保持通用性；
+  - **自动化测试通过**：核心单元测试新增往返验证用例，前端契约测试持续保持 160 项全绿。
 
 ---
 

@@ -1,9 +1,9 @@
-use serde::Serialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 const WINDOWS_USER_ENV_KEY: &str = "Environment";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvConflict {
     pub name: String,
@@ -11,14 +11,14 @@ pub struct EnvConflict {
     pub value_present: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EnvConflictSource {
     Process,
     User,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvConflictRemoval {
     pub name: String,
@@ -26,11 +26,19 @@ pub struct EnvConflictRemoval {
     pub removed_user: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvConflictRemovalResult {
     pub removed: Vec<EnvConflictRemoval>,
     pub backup_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvConflictBackupEntry {
+    pub name: String,
+    pub source: EnvConflictSource,
+    pub value: Option<String>,
 }
 
 pub fn is_codex_env_conflict_name(name: &str) -> bool {
@@ -108,10 +116,28 @@ fn remove_env_conflicts_with_user_env(
 
     std::fs::create_dir_all(&backup_dir)?;
     let backup_path = backup_dir.join(format!("env-conflicts-{}.json", timestamp_millis()));
-    let before = detect_env_conflicts()
-        .into_iter()
-        .filter(|conflict| names.iter().any(|name| name == &conflict.name))
-        .collect::<Vec<_>>();
+    let mut before = Vec::new();
+    for name in &names {
+        if let Some(val) = std::env::var_os(name) {
+            before.push(EnvConflictBackupEntry {
+                name: name.clone(),
+                source: EnvConflictSource::Process,
+                value: Some(val.to_string_lossy().to_string()),
+            });
+        }
+        #[cfg(windows)]
+        if remove_user_env {
+            if let Ok(user_values) = crate::windows_integration::read_current_user_string_values(WINDOWS_USER_ENV_KEY) {
+                if let Some((_, val)) = user_values.into_iter().find(|(k, _)| k.eq_ignore_ascii_case(name)) {
+                    before.push(EnvConflictBackupEntry {
+                        name: name.clone(),
+                        source: EnvConflictSource::User,
+                        value: val,
+                    });
+                }
+            }
+        }
+    }
     std::fs::write(&backup_path, serde_json::to_vec_pretty(&before)?)?;
 
     let mut removed = Vec::new();
@@ -132,6 +158,36 @@ fn remove_env_conflicts_with_user_env(
         removed,
         backup_path: Some(backup_path.to_string_lossy().to_string()),
     })
+}
+
+pub fn restore_env_conflicts(backup_path: &Path) -> anyhow::Result<usize> {
+    let bytes = std::fs::read(backup_path)?;
+    let entries: Vec<EnvConflictBackupEntry> = serde_json::from_slice(&bytes)?;
+    let mut restored = 0;
+    for entry in entries {
+        if let Some(value) = entry.value {
+            match entry.source {
+                EnvConflictSource::Process => {
+                    unsafe {
+                        std::env::set_var(&entry.name, &value);
+                    }
+                    restored += 1;
+                }
+                EnvConflictSource::User => {
+                    #[cfg(windows)]
+                    {
+                        crate::windows_integration::set_current_user_string_value(
+                            WINDOWS_USER_ENV_KEY,
+                            &entry.name,
+                            &value,
+                        )?;
+                        restored += 1;
+                    }
+                }
+            }
+        }
+    }
+    Ok(restored)
 }
 
 fn normalized_conflict_names(names: &[String]) -> Vec<String> {
@@ -228,5 +284,38 @@ mod tests {
             ]),
             vec!["OPENAI_API_KEY", "OPENAI_BASE_URL"]
         );
+    }
+
+    #[test]
+    fn backup_and_restore_round_trips_correctly() {
+        let temp = tempfile::tempdir().unwrap();
+        let backup_dir = temp.path().to_path_buf();
+        unsafe {
+            std::env::set_var("OPENAI_TEST_ROUNDTRIP_KEY", "sk-test-secret-value-xyz");
+        }
+        assert_eq!(
+            std::env::var("OPENAI_TEST_ROUNDTRIP_KEY").unwrap(),
+            "sk-test-secret-value-xyz"
+        );
+
+        let result = remove_process_env_conflicts_for_tests(
+            &["OPENAI_TEST_ROUNDTRIP_KEY".to_string()],
+            backup_dir,
+        )
+        .unwrap();
+        assert!(std::env::var("OPENAI_TEST_ROUNDTRIP_KEY").is_err());
+        assert!(result.backup_path.is_some());
+
+        let backup_file = PathBuf::from(result.backup_path.unwrap());
+        let restored_count = restore_env_conflicts(&backup_file).unwrap();
+        assert_eq!(restored_count, 1);
+        assert_eq!(
+            std::env::var("OPENAI_TEST_ROUNDTRIP_KEY").unwrap(),
+            "sk-test-secret-value-xyz"
+        );
+
+        unsafe {
+            std::env::remove_var("OPENAI_TEST_ROUNDTRIP_KEY");
+        }
     }
 }
