@@ -139,6 +139,13 @@ import { vlmTestTranslation } from "./vlm-test-translation";
 import { formatSanitizedDiagnosticReport, parseDiagnosticLogEntries } from "./request-diagnostics";
 import { runConcurrentSpeedMatrix, type SpeedMatrixSummary } from "./speed-matrix";
 import { searchLocalSessions } from "./session-search";
+import {
+  computeProviderSwitchPreflight,
+  createSwitchRollbackSnapshot,
+  restoreSwitchRollback,
+  type ProviderSwitchPreflight,
+  type SwitchRollbackSnapshot,
+} from "./provider-switch-preflight";
 
 const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
 const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
@@ -1043,6 +1050,12 @@ export function App() {
   const [relayEnvironment, setRelayEnvironment] = useState<RelayEnvironmentResult | null>(null);
   const [ccsProviders, setCcsProviders] = useState<CcsProvidersResult | null>(null);
   const [pendingProviderImport, setPendingProviderImport] = useState<ProviderImportRequest | null>(null);
+  const [pendingSwitchPreflight, setPendingSwitchPreflight] = useState<{
+    preflight: ProviderSwitchPreflight;
+    nextSettings: BackendSettings;
+    previousActiveRelayId: string;
+  } | null>(null);
+  const [lastSwitchRollback, setLastSwitchRollback] = useState<SwitchRollbackSnapshot | null>(null);
   const [localSessions, setLocalSessions] = useState<LocalSessionsResult | null>(null);
   const [sessionShareUrl, setSessionShareUrl] = useState("");
   const [zedRemoteProjects, setZedRemoteProjects] = useState<ZedRemoteProjectsResult | null>(null);
@@ -2695,7 +2708,11 @@ export function App() {
     if (result) showNotice(t("纯 API 模式"), t("已切换到纯 API；Codex增强已设为完整增强。"), result.status);
   };
 
-  const switchRelayProfile = async (next: BackendSettings, previousActiveRelayId = settingsForm.activeRelayId) => {
+  const switchRelayProfile = async (
+    next: BackendSettings,
+    previousActiveRelayId = settingsForm.activeRelayId,
+    skipPreflight = false,
+  ) => {
     if (relaySwitching) {
       showNotice(t("供应商切换中"), t("上一次切换还没有完成，请稍后再试。"), "failed");
       return;
@@ -2706,6 +2723,20 @@ export function App() {
       return;
     }
     const targetBeforeSnapshot = activeRelayProfile(switchSettings);
+    const sourceBeforeSnapshot = activeRelayProfile(settingsForm);
+
+    if (!skipPreflight && sourceBeforeSnapshot.id !== targetBeforeSnapshot.id) {
+      const preflight = computeProviderSwitchPreflight(sourceBeforeSnapshot, targetBeforeSnapshot);
+      if (preflight.hasChanges && preflight.requiresConfirmation) {
+        setPendingSwitchPreflight({
+          preflight,
+          nextSettings: switchSettings,
+          previousActiveRelayId,
+        });
+        return;
+      }
+    }
+
     logDiagnostic("switchRelayProfile.start", {
       currentRelayId: settingsForm.activeRelayId,
       targetRelayId: switchSettings.activeRelayId,
@@ -2723,6 +2754,7 @@ export function App() {
       showNotice(t("供应商配置可能不正确"), validationError, "failed");
       return;
     }
+    const rollbackSnapshot = createSwitchRollbackSnapshot(settingsForm, switchSettings.activeRelayId);
     switchSettings = await snapshotActiveRelayFilesBeforeSwitch(switchSettings, previousActiveRelayId);
     const selectedAfterSave = activeRelayProfile(switchSettings);
     const command = relayProfileSwitchCommand(selectedAfterSave);
@@ -2771,6 +2803,7 @@ export function App() {
         showNotice(t("供应商切换"), result.message, result.status);
         return;
       }
+      setLastSwitchRollback(rollbackSnapshot);
       const currentSelected = activeRelayProfile(selectedSettings);
       logDiagnostic("switchRelayProfile.ok", {
         targetRelayId: currentSelected.id,
@@ -2780,6 +2813,16 @@ export function App() {
     } finally {
       setRelaySwitching(false);
     }
+  };
+
+  const undoProviderSwitch = async () => {
+    if (!lastSwitchRollback) return;
+    const restored = restoreSwitchRollback(lastSwitchRollback);
+    if (!restored) return;
+    const previousName = lastSwitchRollback.sourceName;
+    setLastSwitchRollback(null);
+    await switchRelayProfile(restored, settingsForm.activeRelayId, true);
+    showNotice(t("撤销成功"), tf("已成功恢复至切换前的供应商「{0}」。", [previousName]), "ok");
   };
 
   const snapshotActiveRelayFilesBeforeSwitch = async (
@@ -3215,6 +3258,8 @@ export function App() {
       fetchRelayProfileModels,
       fetchSub2ApiBilling,
       switchRelayProfile,
+      undoProviderSwitch,
+      lastSwitchRollback,
       relaySwitching,
       switchOfficialMode,
       switchPureApiMode,
@@ -3327,6 +3372,40 @@ export function App() {
             </Button>
           </div>
         </header>
+        {lastSwitchRollback ? (
+          <div
+            className="provider-rollback-banner"
+            style={{
+              margin: "12px 24px 0 24px",
+              padding: "10px 16px",
+              background: "var(--color-bg-accent, rgba(40, 167, 69, 0.08))",
+              border: "1px solid var(--color-border-accent, rgba(40, 167, 69, 0.35))",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <RotateCcw className="h-4 w-4" />
+              <span>
+                {tf("已切换至供应商「{0}」。如需恢复前一配置（{1}），可随时一键撤销。", [
+                  lastSwitchRollback.targetName,
+                  lastSwitchRollback.sourceName,
+                ])}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <Button size="sm" onClick={() => void undoProviderSwitch()}>
+                <RotateCcw className="h-4 w-4" />
+                {t("一键撤销")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setLastSwitchRollback(null)}>
+                {t("关闭")}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <section className="screen" key={route}>
           <Suspense fallback={<ScreenLoadingFallback />}>
             {route === "overview" ? (
@@ -3525,6 +3604,17 @@ export function App() {
           onDismiss={() => void dismissPendingDreamSkinCommunity()}
         />
       ) : null}
+      {pendingSwitchPreflight ? (
+        <ProviderSwitchPreflightDialog
+          preflight={pendingSwitchPreflight.preflight}
+          onConfirm={() => {
+            const pending = pendingSwitchPreflight;
+            setPendingSwitchPreflight(null);
+            void switchRelayProfile(pending.nextSettings, pending.previousActiveRelayId, true);
+          }}
+          onCancel={() => setPendingSwitchPreflight(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -3617,7 +3707,9 @@ type Actions = {
   testStepwiseSettings: (settings: BackendSettings) => Promise<void>;
   fetchRelayProfileModels: (profile: RelayProfile) => Promise<string[] | null>;
   fetchSub2ApiBilling: (profile: RelayProfile) => Promise<Sub2ApiBillingResult | null>;
-  switchRelayProfile: (settings: BackendSettings, previousActiveRelayId?: string) => Promise<void>;
+  switchRelayProfile: (settings: BackendSettings, previousActiveRelayId?: string, skipPreflight?: boolean) => Promise<void>;
+  undoProviderSwitch?: () => Promise<void>;
+  lastSwitchRollback?: SwitchRollbackSnapshot | null;
   relaySwitching: boolean;
   switchOfficialMode: () => Promise<void>;
   switchPureApiMode: () => Promise<void>;
@@ -9410,6 +9502,67 @@ function PendingProviderImportDialog({
             {t("确认导入")}
           </Button>
           <Button onClick={onDismiss} variant="secondary">{t("取消")}</Button>
+        </Toolbar>
+      </div>
+    </div>
+  );
+}
+
+function ProviderSwitchPreflightDialog({
+  preflight,
+  onConfirm,
+  onCancel,
+}: {
+  preflight: ProviderSwitchPreflight;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal-card provider-import-modal" style={{ maxWidth: "580px" }}>
+        <div className="modal-head">
+          <div>
+            <h2>{t("供应商切换差异预检")}</h2>
+            <p>{preflight.summary}</p>
+          </div>
+          <button className="toast-close" onClick={onCancel} type="button">×</button>
+        </div>
+        <div className="preflight-diff-list" style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "360px", overflowY: "auto", margin: "12px 0" }}>
+          {preflight.diffs.map((diff, index) => (
+            <div
+              key={index}
+              style={{
+                padding: "10px 12px",
+                borderRadius: "6px",
+                background: "var(--color-bg-subtle, rgba(0,0,0,0.03))",
+                border: "1px solid var(--color-border, #eee)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                <strong>{diff.label}</strong>
+                <span style={{ fontSize: "12px", opacity: 0.65 }}>{diff.category}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", wordBreak: "break-all" }}>
+                <code style={{ background: "rgba(220, 53, 69, 0.12)", color: "var(--color-error, #dc3545)", padding: "2px 6px", borderRadius: "4px" }}>
+                  {diff.oldValue}
+                </code>
+                <span>➔</span>
+                <code style={{ background: "rgba(40, 167, 69, 0.12)", color: "var(--color-success, #28a745)", padding: "2px 6px", borderRadius: "4px" }}>
+                  {diff.newValue}
+                </code>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hint-line" role="note">
+          {t("安全提示：切换后配置将立即写入 config.toml 与 auth.json。系统已自动生成回滚快照，切换后可随时一键撤销。")}
+        </div>
+        <Toolbar>
+          <Button onClick={onConfirm}>
+            <CheckCircle2 className="h-4 w-4" />
+            {t("确认切换")}
+          </Button>
+          <Button onClick={onCancel} variant="secondary">{t("取消")}</Button>
         </Toolbar>
       </div>
     </div>

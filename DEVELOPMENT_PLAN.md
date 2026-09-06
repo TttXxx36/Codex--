@@ -69,7 +69,7 @@ graph TD
         P2_2["✅ 任务 11 (UX-003): 本地 API 请求与错误诊断脱敏看板"]
         P2_3["✅ 任务 12 (PERF-004): 多供应商并发测速矩阵与智能决策建议"]
         P2_4["✅ 任务 13 (PERF-003): SQLite 查询计划基线与海量会话检索优化"]
-        P2_5["🔄 任务 14 (UX-002): 供应商平滑切换差异预检、会话安全回滚与单一入口治理"]
+        P2_5["✅ 任务 14 (UX-002): 供应商平滑切换差异预检、会话安全回滚与单一入口治理"]
     end
 
     T01D --> P0_1
@@ -559,10 +559,27 @@ graph TD
 
 ---
 
-### 【任务 14 (P2 / UX-002)】供应商平滑切换差异预检、会话安全回滚与单一入口治理（进行中 ⏳）
+### 【任务 14 (P2 / UX-002)】供应商平滑切换差异预检、会话安全回滚与单一入口治理（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
   - 简化供应商切换流程，提供“当前来源 → 目标 profile → 将改变的配置差异预检 → 确认应用 → 可撤销回滚结果”的统一入口；
   - 杜绝隐式覆盖和误操作，并在切换完成后提供一键撤销 Banner，保障用户凭据与配置安全。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（推进实施中）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **供应商差异预检与回滚快照引擎 (`apps/codex-plus-manager/src/provider-switch-preflight.ts`)**：
+     - 实现 `computeProviderSwitchPreflight`：全方位比较源供应商与目标供应商差异，涵盖 Base URL、模型选择、通信协议（Responses/Chat）、转发模式、API Key 变更、上游基准地址及 Sub2api 转换等 7 大核心配置项；
+     - 实现敏感信息安全掩码（`maskCredential`）：凭据仅展示前后 3 位并以 `****` 脱敏遮罩，杜绝密钥外泄；
+     - 实现不可变回滚快照机制（`createSwitchRollbackSnapshot` 与 `restoreSwitchRollback`）：切换前原子持久化 settings 镜像及唯一令牌，支持随时一键完全复原。
+  2. **切换流程单一入口与前端确认交互治理 (`apps/codex-plus-manager/src/App.tsx`)**：
+     - 在统一切换出口 `switchRelayProfile` 建立预检拦截门禁：检测到关键差异（地址、协议、认证）时，阻断静默切换，弹出《供应商切换差异预检》弹窗（`ProviderSwitchPreflightDialog`），展示新旧对比与安全提示，支持用户显式取消；
+     - 切换成功后在主控制台顶部显式展示《切换成功与撤销提示条》（`provider-rollback-banner`），附带一键撤销按钮，点击后无缝回滚至前一供应商全部配置并弹出提示。
+  3. **自动化测试矩阵全面覆盖 (`apps/codex-plus-manager/src/provider-switch-preflight.test.ts`)**：
+     - 编写 4 组单元测试：
+       - API Key 敏感信息脱敏掩码准确性断言；
+       - 同供应商无差异切换判定（`hasChanges === false`, `requiresConfirmation === false`）；
+       - 多维度字段变更精准分类（endpoint, model, protocol, auth, other）与结构化 diff 输出；
+       - 回滚快照生成、序列化、恢复往返一致性测试。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **单一入口与透明预检**：彻底杜绝配置静默覆盖和误选导致的连接/认证损坏，差异预检清晰直观；
+  - **安全可逆回滚**：切换后提供显著的一键撤销通道，用户无需手工还原 TOML 即可瞬间恢复原状；
+  - **测试全绿无回归**：Manager 自动化单测增至 184 项，**184 项单测全部绿灯通过（0 failure）**，执行耗时约 530ms。
