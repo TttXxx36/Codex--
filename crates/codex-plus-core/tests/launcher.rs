@@ -2137,3 +2137,61 @@ impl LaunchHooks for FakeHooks {
         }
     }
 }
+
+#[tokio::test]
+async fn launcher_smoke_e2e_lifecycle_and_target_discovery() {
+    // Smoke 1: Target discovery from mock Electron targets
+    let fake_targets = vec![
+        codex_plus_core::cdp::CdpTarget {
+            id: "bg".into(),
+            target_type: "background_page".into(),
+            title: "Extension".into(),
+            url: "chrome-extension://xyz/bg.html".into(),
+            web_socket_debugger_url: Some("ws://127.0.0.1:9222/devtools/page/bg".into()),
+        },
+        codex_plus_core::cdp::CdpTarget {
+            id: "avatar".into(),
+            target_type: "page".into(),
+            title: "Avatar Overlay".into(),
+            url: "app://-/avatar-overlay.html".into(),
+            web_socket_debugger_url: Some("ws://127.0.0.1:9222/devtools/page/avatar".into()),
+        },
+        codex_plus_core::cdp::CdpTarget {
+            id: "main".into(),
+            target_type: "page".into(),
+            title: "Codex Main Surface".into(),
+            url: "app://-/index.html".into(),
+            web_socket_debugger_url: Some("ws://127.0.0.1:9222/devtools/page/main".into()),
+        },
+    ];
+    let picked = codex_plus_core::cdp::pick_page_target(&fake_targets).expect("should pick main page");
+    assert_eq!(picked.id, "main");
+    assert_eq!(picked.title, "Codex Main Surface");
+
+    // Smoke 2: Validate loopback enforcement on debugger WebSocket URL
+    assert!(codex_plus_core::cdp::validate_cdp_websocket_url("ws://127.0.0.1:9222/devtools/page/main", 9222).is_ok());
+    assert!(codex_plus_core::cdp::validate_cdp_websocket_url("ws://10.0.0.1:9222/devtools/page/main", 9222).is_err());
+    assert!(codex_plus_core::cdp::validate_cdp_websocket_url("ws://127.0.0.1:8888/devtools/page/main", 9222).is_err());
+
+    // Smoke 3: Full hook lifecycle launch & inject
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let hooks = FakeHooks::new(events.clone());
+    let handle = launch_and_inject_with_hooks(
+        LaunchOptions {
+            app_dir: Some(PathBuf::from("/Applications/Codex.app")),
+            debug_port: 9222,
+            helper_port: 57321,
+            status_store: StatusStore::new(tempfile::tempdir().unwrap().path().join("status.json")),
+        },
+        &hooks,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(handle.debug_port, 9222);
+    assert_eq!(handle.helper_port, 57321);
+    let captured = events.lock().unwrap().clone();
+    assert!(captured.contains(&"start-helper:57321".to_string()));
+    assert!(captured.contains(&"inject:9222:57321".to_string()));
+    assert!(captured.contains(&"status:running".to_string()));
+}

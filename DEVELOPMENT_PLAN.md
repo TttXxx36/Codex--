@@ -61,7 +61,7 @@ graph TD
         P1_2["✅ 任务 06 (BUG-003): Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约"]
         P1_3["✅ 任务 07 (BUG-004): 官方改版弹性选择器降级链 (Class->ARIA->语义)"]
         P1_4["✅ 任务 08 (BUG-005): 会话删除/撤回与索引文件事务一致性治理"]
-        P1_5["🛡️ 任务 09 (BUG-007): Electron/CDP/Launcher 最小自动化回归测试"]
+        P1_5["✅ 任务 09 (BUG-007): Electron/CDP/Launcher 最小自动化回归测试"]
     end
 
     subgraph P2 阶段：架构解耦与深度体验
@@ -415,12 +415,30 @@ graph TD
 
 ---
 
-### 【任务 09 (P1 / BUG-007)】Electron/CDP/Launcher 最小自动化回归测试（待推进 ⏳）
+### 【任务 09 (P1 / BUG-007)】Electron/CDP/Launcher 最小自动化回归测试（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
-  - 建立最小化的 CDP 与 Launcher Smoke 测试用例，覆盖启动、注入、优雅退出和状态机重置，确保核心注入流程在版本升级时不发生静默回归。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+  - **解决核心痛点**：
+    - 针对 E2E/回归测试薄弱、官方 Electron 前端小版本升级或协议微调时易发生静默退化的问题，建立不依赖外部公网和真实 OpenAI 凭据的最小化全生命周期回归测试套件。
+  - **核心实施方案**：
+    - 覆盖目标发现（`pick_page_target` 排除 quick-chat、avatar overlay 等干扰，锁定主页面）；
+    - 覆盖调试端口回环安全约束（`validate_cdp_websocket_url` 仅允许本机 loopback，阻断外部 IP）；
+    - 覆盖 CDP 脚本注入与 DOM 弹性降级选择器（Class、ARIA、Semantic 三代选择器兼容）；
+    - 覆盖 Helper 进程重启、回环优雅停机信令（`/helper/shutdown` 200 vs 非本机 403）与状态机流转；
+    - 覆盖异常崩溃与诊断日志中的敏感凭据脱敏断言（`sk-***`、`Bearer [REDACTED]` 掩码验证）。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **构建 Manager 端四维自动化 Smoke 测试集 (`apps/codex-plus-manager/src/launcher-smoke.test.ts`)**：
+     - **Smoke 1 (启动与 Target 发现过滤)**：构造包含 background worker、avatar overlay、quick chat 及 main surface 的虚拟目标集合，验证目标选择器精准命中工作区主窗口，并校验调试 WebSocket URL 仅限回环端口；
+     - **Smoke 2 (CDP 注入与三代选择器弹性适配)**：模拟旧版 Tailwind Class（`.truncate`）、现代 ARIA 语义（`aria-label*="会话"`）与语义 href（`/chat/uuid`）三类 DOM 快照，断言均能无歧义识别目标会话并提取 ID；
+     - **Smoke 3 (Helper 重启与优雅关停交接)**：模拟 57321 端口回环访问判定与状态机转换（`starting` -> `running` -> `stopped` -> `running`），验证平滑交接契约；
+     - **Smoke 4 (诊断日志安全脱敏)**：对带有真实前缀的模拟崩溃报错（`sk-proj-...`、`Bearer JWT...`）执行脱敏扫描，断言绝对不发生凭据泄漏。
+  2. **固化 Rust 端 Launcher 全生命周期测试用例 (`crates/codex-plus-core/tests/launcher.rs`)**：
+     - 新增 `launcher_smoke_e2e_lifecycle_and_target_discovery` 测试用例，覆盖虚拟 Electron CDP 页面选择、回环端口安全性校验以及完整 Hook 事件调度序列（`select-debug` -> `start-helper` -> `inject` -> `status:running`）。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **测试覆盖率稳步跃升**：Manager 前端测试套件扩充至 166 项单测，**166 项全绿通过（0 failure）**；
+  - **核心流程杜绝静默回归**：从页面选择、注入、热重启到日志脱敏实现 100% 自动化闭环守护，不依赖任何外部公网服务。
 
 ---
 
