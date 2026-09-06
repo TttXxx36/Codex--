@@ -33,18 +33,6 @@ After installation, two entry points are available:
 
 For first-time setup, open the manager, verify the detected app path, configure a provider and optional enhancements, then launch through `Codex++`. The Windows installer creates Desktop and Start Menu shortcuts. The macOS DMG installs `/Applications/Codex++.app` and `/Applications/Codex++ 管理工具.app`.
 
-## Community and Support
-
-Join the Codex++ community (QQ group: 830629290) to report issues, share feedback, or suggest features.
-
-WeChat: <a href="https://docs.qq.com/doc/DQ2VOanZTTFZJcUpZ#">get the latest group QR code</a>.
-
-<img src="docs/images/discussion-group-qr.jpg" alt="Codex++ WeChat group QR code" width="260">
-
-Telegram: <https://t.me/CodexPlusPlus>
-
-Friendly link: <a href="https://linux.do">LINUX DO</a>
-
 ## Current Features
 
 | Area | Capabilities |
