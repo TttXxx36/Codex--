@@ -59,7 +59,7 @@ graph TD
     subgraph P1 阶段：协议兼容与注入韧性
         P1_1["✅ 任务 05 (BUG-006): 会话分享 UI/后端语义收敛为纯本地安全导出"]
         P1_2["✅ 任务 06 (BUG-003): Responses↔Chat 双向转换、图片 Data URL 与 SSE 状态契约"]
-        P1_3["🛡️ 任务 07 (BUG-004): 官方改版弹性选择器降级链 (Class->ARIA->语义)"]
+        P1_3["✅ 任务 07 (BUG-004): 官方改版弹性选择器降级链 (Class->ARIA->语义)"]
         P1_4["🛡️ 任务 08 (BUG-005): 会话删除/撤回与索引文件事务一致性治理"]
         P1_5["🛡️ 任务 09 (BUG-007): Electron/CDP/Launcher 最小自动化回归测试"]
     end
@@ -348,12 +348,30 @@ graph TD
 
 ---
 
-### 【任务 07 (P1 / BUG-004)】官方改版弹性选择器降级链 (Class->ARIA->语义)（待推进 ⏳）
+### 【任务 07 (P1 / BUG-004)】官方改版弹性选择器降级链 (Class->ARIA->语义)（已完成 ✅）
 
 - **🎯 阶段计划 (Plan)**：
-  - 针对官方 Electron 前端小版本升级修改 DOM 类名导致会话删除按钮、侧边栏入口失效的问题，构建多级备选降级选择器链（Class -> ARIA -> 图标语义）。
-- **🛠️ 实际完成的步骤 (Actual Steps)**：*（等待实施）*
-- **✅ 实际完成的结果 (Results & Verification)**：*（等待验证）*
+  - **解决核心痛点**：
+    - 针对官方 Electron 前端小版本升级修改 DOM 类名导致会话删除按钮、侧边栏入口失效的问题，构建多级备选降级选择器链（Class -> ARIA -> 图标语义）。
+  - **核心实施方案**：
+    - 构建统一的 `domSelectorAdapter` 选择器适配器；
+    - 优先采用 `role`、`aria-label`、`aria-roledescription`、稳定数据属性等持久语义，旧 CSS Class 作为后备；
+    - 确保在 0 或多候选时安全失败并降级，不误触或陷入死循环。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **构建弹性选择器降级适配器 (`assets/inject/renderer-inject.js`)**：
+     - 重构顶层 `selectors` 字典，采用现代 CSS `:is(...)` 联合降级规范，将侧边栏会话行 (`sidebarThread`)、标题节点 (`threadTitle`)、顶部导航条 (`appHeader`)、归档入口 (`archiveNav`) 与输入区域 (`chatInput`) 全部纳入弹性链；
+     - 降级顺序统一遵循：`官方专属属性/稳定Class → ARIA语义属性(role/aria-label/heading) → 结构与href语义`。
+  2. **全面升级会话与归档识别提取机制 (`assets/inject/renderer-inject.js`)**：
+     - 在 `archivePageHintVisible` 与 `archivedPageRows` 中引入中英双语、ARIA 状态（`aria-current="page"` / `aria-label*="归档"` / `aria-label*="unarchive"`）及语义标题探测，杜绝纯靠硬编码中文文本匹配导致的误判与漏判；
+     - 在 `sessionRefFromRow` 与 `threadIdBadgeTitleNode` 中全面接入 `domSelectorAdapter`，确保在官方修改 `.truncate` 等 Tailwind 类名后仍能稳定提取标题与会话 UUID。
+  3. **单元回归契约固化 (`apps/codex-plus-manager/src/renderer-inject.test.ts`)**：
+     - 新增 `DOM selector fallback resilience (BUG-004)` 测试用例集，覆盖旧 class、ARIA-only 与语义 href 结构断言；
+     - 确保 manager 单测框架中的样式安装与提取沙箱在最新 selector 结构下 100% 兼容通过。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **抗官方改版能力显著提升**：即使官方重构 DOM 结构或变更 Tailwind 随机类名，注入脚本仍可依据 ARIA 角色与链接语义正常定位元素；
+  - **测试全绿**：`apps/codex-plus-manager` 单测套件扩展至 162 项，全数通过（0 fail）。
 
 ---
 

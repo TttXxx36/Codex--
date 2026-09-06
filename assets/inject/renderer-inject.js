@@ -578,13 +578,33 @@
   } catch (_) {}
   window.__codexPlusConversationViewCleanup = null;
   const selectors = {
-    sidebarThread: "[data-app-action-sidebar-thread-id]",
-    threadTitle: "[data-thread-title]",
-    appHeader: '[class*="ApplicationMenuTopBar"], .app-header-tint',
-    archiveNav: 'button[aria-label="已归档对话"], button[aria-label="Archived conversations"]',
+    sidebarThread: ':is([data-app-action-sidebar-thread-id], nav[role="navigation"] [role="listitem"] a[href*="/session/"], nav[role="navigation"] [role="listitem"] a[href*="/thread/"], a[href*="/session/"], a[href*="/thread/"], [data-testid*="conversation-row"])',
+    threadTitle: ':is([data-thread-title], [aria-label][role="link"] > span, [role="heading"], [aria-roledescription="thread-title"], .truncate.select-none, .truncate.text-base, .truncate)',
+    appHeader: ':is([class*="ApplicationMenuTopBar"], .app-header-tint, header[role="banner"], [role="navigation"][aria-label="Top Menu"], header, .app-header)',
+    archiveNav: ':is(button[aria-label="已归档对话"], button[aria-label="Archived conversations"], [role="button"][aria-label*="归档"], [role="button"][aria-label*="Archive"], a[href*="/archive"], button[data-testid*="archive"])',
+    chatInput: ':is(textarea[data-testid="composer-input"], [role="textbox"][contenteditable="true"], textarea[aria-label*="Message"], textarea[aria-label*="输入"], textarea[placeholder*="Ask"], textarea[placeholder*="问"], form textarea)',
     disabledInstallButton: 'button:disabled, button[aria-disabled="true"], [role="button"][aria-disabled="true"], button[data-disabled], [role="button"][data-disabled], button.cursor-not-allowed, [role="button"].cursor-not-allowed, button.pointer-events-none, [role="button"].pointer-events-none',
     pluginNavButton: 'nav[role="navigation"] button.h-token-nav-row.w-full',
     pluginSvgPath: 'svg path[d^="M7.94562 14.0277"]',
+  };
+
+  const domSelectorAdapter = {
+    querySelector(container, chainOrName) {
+      const selector = selectors[chainOrName] || chainOrName;
+      try {
+        return container?.querySelector?.(selector) || null;
+      } catch (_) {
+        return null;
+      }
+    },
+    querySelectorAll(container, chainOrName) {
+      const selector = selectors[chainOrName] || chainOrName;
+      try {
+        return Array.from(container?.querySelectorAll?.(selector) || []);
+      } catch (_) {
+        return [];
+      }
+    },
   };
   const headerContextButtonClass = "border-token-border user-select-none no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-lg border-token-border text-token-button-tertiary-foreground bg-token-bg-fog enabled:hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background border h-token-button-composer px-2 py-0 text-base leading-[18px]";
 
@@ -5229,9 +5249,12 @@
   function archivePageHintVisible() {
     if (window.location.href.includes("archive")) return true;
     if (document.querySelector('[data-codex-archive-page-row="true"], [data-codex-archive-delete-all]')) return true;
-    const archiveNav = document.querySelector(selectors.archiveNav);
-    if (archiveNav?.className?.includes?.("bg-token-list-hover-background")) return true;
-    return !!Array.from(document.querySelectorAll("h1, h2, h3")).find((element) => (element.textContent || "").trim() === "已归档对话");
+    const archiveNav = domSelectorAdapter.querySelector(document, "archiveNav");
+    if (archiveNav?.className?.includes?.("bg-token-list-hover-background") || archiveNav?.getAttribute("aria-current") === "page" || archiveNav?.dataset?.active === "true") return true;
+    return !!Array.from(document.querySelectorAll("h1, h2, h3, [role='heading']")).find((element) => {
+      const t = (element.textContent || "").trim();
+      return t === "已归档对话" || t.toLowerCase() === "archived conversations";
+    });
   }
 
   function archiveRowFromUnarchiveButton(button) {
@@ -5243,7 +5266,11 @@
 
   function archivedPageRows() {
     if (!archivePageHintVisible()) return [];
-    const rows = Array.from(document.querySelectorAll("button")).filter((button) => (button.textContent || "").trim() === "取消归档").map(archiveRowFromUnarchiveButton).filter(Boolean);
+    const rows = Array.from(document.querySelectorAll("button")).filter((button) => {
+      const text = (button.textContent || "").trim();
+      const aria = (button.getAttribute("aria-label") || "").trim();
+      return text === "取消归档" || text.toLowerCase() === "unarchive" || aria.includes("取消归档") || aria.toLowerCase().includes("unarchive");
+    }).map(archiveRowFromUnarchiveButton).filter(Boolean);
     rows.forEach((row) => {
       row.dataset.codexArchivePageRow = "true";
       row.setAttribute("data-codex-archive-page-row", "true");
@@ -5293,7 +5320,7 @@
   function sessionRefFromRow(row) {
     const href = row.getAttribute("href") || row.querySelector("a")?.getAttribute("href") || "";
     const idMatch = href.match(/(?:session|conversation|thread)[=/:-]([A-Za-z0-9_.-]+)/i) || href.match(/([A-Za-z0-9_-]{8,})$/);
-    const codexThreadId = row.getAttribute("data-app-action-sidebar-thread-id") || "";
+    const codexThreadId = row.getAttribute("data-app-action-sidebar-thread-id") || row.getAttribute("data-thread-id") || "";
     const fallbackId = row.getAttribute("data-session-id") || row.getAttribute("data-testid") || "";
     const placeholderThreadId = isClientNewThreadId(codexThreadId);
     const hrefId = idMatch && idMatch[1];
@@ -5308,7 +5335,7 @@
         || codexThreadId
         || hrefId
         || fallbackId;
-    const titleNode = row.querySelector(`${selectors.threadTitle}, .truncate.select-none, .truncate.text-base`);
+    const titleNode = domSelectorAdapter.querySelector(row, "threadTitle") || row.querySelector(`${selectors.threadTitle}, .truncate.select-none, .truncate.text-base`);
     const rawTitle = (titleNode?.textContent || (titleNode ? "" : (row.textContent || "Untitled session")));
     const title = (titleNode ? rawTitle : rawTitle.replace(/\s*(导出|删除|移动|移出项目)(\s*(导出|删除|移动|移出项目))*$/g, "")).trim().slice(0, 160);
     return { session_id: sessionId, title };
@@ -5321,7 +5348,7 @@
   }
 
   function threadIdBadgeTitleNode(row) {
-    return row.querySelector(`${selectors.threadTitle}, .truncate.select-none, .truncate.text-base`);
+    return domSelectorAdapter.querySelector(row, "threadTitle") || row.querySelector(`${selectors.threadTitle}, .truncate.select-none, .truncate.text-base`);
   }
 
   function padThreadIdBadgePart(value) {

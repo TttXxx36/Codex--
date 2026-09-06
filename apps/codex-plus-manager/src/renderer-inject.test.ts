@@ -939,3 +939,34 @@ describe("Stepwise generation mode contracts", () => {
     );
   });
 });
+
+describe("DOM selector fallback resilience (BUG-004)", () => {
+  it("defines resilient fallback chains for sidebar, title, archive, and chat input", async () => {
+    const renderer = await readFile(new URL("../../../assets/inject/renderer-inject.js", import.meta.url), "utf8");
+
+    assert.match(renderer, /sidebarThread:\s*':is\(\[data-app-action-sidebar-thread-id\]/);
+    assert.match(renderer, /threadTitle:\s*':is\(\[data-thread-title\]/);
+    assert.match(renderer, /archiveNav:\s*':is\(button\[aria-label="已归档对话"\]/);
+    assert.match(renderer, /chatInput:\s*':is\(textarea\[data-testid="composer-input"\]/);
+    assert.match(renderer, /const domSelectorAdapter = \{/);
+  });
+
+  it("matches old class, ARIA-only and semantic markup across fallback selectors", () => {
+    const selectors = {
+      sidebarThread: ':is([data-app-action-sidebar-thread-id], nav[role="navigation"] [role="listitem"] a[href*="/session/"], a[href*="/session/"])',
+      threadTitle: ':is([data-thread-title], [aria-label][role="link"] > span, .truncate.select-none)',
+      archiveNav: ':is(button[aria-label="已归档对话"], [role="button"][aria-label*="归档"], a[href*="/archive"])',
+    };
+
+    // 验证旧 class / 官方数据属性
+    assert.ok(selectors.sidebarThread.includes("[data-app-action-sidebar-thread-id]"));
+    assert.ok(selectors.threadTitle.includes("[data-thread-title]"));
+    // 验证 ARIA-only
+    assert.ok(selectors.sidebarThread.includes('nav[role="navigation"] [role="listitem"] a[href*="/session/"]'));
+    assert.ok(selectors.archiveNav.includes('[role="button"][aria-label*="归档"]'));
+    // 验证 语义/href
+    assert.ok(selectors.sidebarThread.includes('a[href*="/session/"]'));
+    assert.ok(selectors.archiveNav.includes('a[href*="/archive"]'));
+  });
+});
+
