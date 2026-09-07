@@ -287,6 +287,18 @@ graph TD
     - 主 bundle 体积明显下降，消除 Vite chunk > 500KB 警告；
     - 拆分后单测保持 100% 绿灯通过，UI 行为与状态完全一致。
 
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  - 建立 apps/codex-plus-manager/src/views/ 目录，并将 OverviewScreen 与其健康检查渲染逻辑迁移到 OverviewScreen.tsx；组件只接收概览数据、插件市场进度和 5 个页面动作回调。
+  - 将 Panel、CardHead、Toolbar、Badge、LatestLaunch、Metric 以及进度/时间格式化逻辑迁移到 ScreenPrimitives.tsx，供现有页面复用，避免首批拆分产生重复渲染实现。
+  - App.tsx 在模块顶层通过 lazy(() => import("./views/OverviewScreen")) 接入 OverviewScreen，保留原有 route 条件、Suspense 加载态和 actions 状态绑定；同步更新 app-decoupling.test.ts，锁定真实动态导入与默认导出契约。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - App.tsx 从基线 11,881 行降至 11,683 行；首个页面视图已脱离 App.tsx，源码层确认存在顶层动态 import。【S】
+  - apps/codex-plus-manager：npm test 通过 199/199，0 failure；定向 app-decoupling.test.ts 通过 2/2。【T】
+  - git diff --check 通过。【S/T 辅助检查】
+  - npm run check 与 npm run vite:build 均因当前环境缺少 tsc/vite 可执行文件退出；因此 TypeScript 类型检查、Vite 实际异步 chunk、主 bundle 体积和桌面端 E2E 仍为未验证，不能把源码动态导入升级为 C/D 级构建或运行证据。
+  - 本阶段未提交、未推送；保留既有未跟踪任务记录和 DEVELOPMENT_PLAN_2_SIMPLIFIED.md 不变。后续 Screen 拆分与真实构建产物验证等待架构师审查。
+
 ---
 
 ### 【任务 23 (P2 / PERF-006)】renderer-inject.js 1.05 万行单 IIFE 模块工程化打包

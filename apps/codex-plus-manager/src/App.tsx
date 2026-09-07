@@ -113,6 +113,19 @@ import { relayAuthForLiveDraft, shouldBackfillRelayProfileBeforeSwitch } from ".
 import { resolveProviderSyncCompletion } from "./provider-sync-flow";
 import { resolveLaunchStatus } from "./launch-status";
 import {
+  Badge,
+  CardHead,
+  LatestLaunch,
+  Metric,
+  Panel,
+  TaskProgressBox,
+  Toolbar,
+  formatProgressPercent,
+  formatTime,
+  type LaunchStatus,
+  type TaskProgress,
+} from "./views/ScreenPrimitives";
+import {
   getActionableEnvConflicts,
   restoreRequestFromRemoval,
   type EnvConflict as GuardEnvConflict,
@@ -190,15 +203,6 @@ type PendingDreamSkinRestart = {
 type PathState = {
   status: string;
   path: string | null;
-};
-
-type LaunchStatus = {
-  status: string;
-  message: string;
-  started_at_ms: number;
-  debug_port: number | null;
-  helper_port: number | null;
-  codex_app: string | null;
 };
 
 type OverviewResult = CommandResult<{
@@ -750,12 +754,6 @@ type ProviderSyncProgress = {
   result: CommandResult<ProviderSyncPayload> | null;
 };
 
-type TaskProgress = {
-  active: boolean;
-  percent: number;
-  message: string;
-};
-
 type LogsResult = CommandResult<{
   path: string;
   text: string;
@@ -1037,6 +1035,8 @@ function ScreenLoadingFallback() {
     </div>
   );
 }
+
+const OverviewScreen = lazy(() => import("./views/OverviewScreen"));
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => loadInitialTheme());
@@ -4291,76 +4291,6 @@ const WeixinConnectScreen = memo(function WeixinConnectScreen({
         </CardContent>
       </Panel>
     </div>
-  );
-});
-
-const OverviewScreen = memo(function OverviewScreen({
-  overview,
-  pluginMarketplaceProgress,
-  actions,
-}: {
-  overview: OverviewResult | null;
-  pluginMarketplaceProgress: TaskProgress;
-  actions: Actions;
-}) {
-  const health = healthItems(overview);
-  return (
-    <>
-      <Panel>
-        <CardHead title={t("健康检查")} detail={t("概览只展示关键问题，具体配置在对应页面处理")} />
-        <CardContent>
-          <div className="health-grid">
-            <div className={`health-item ${overview?.codex_version ? "ok" : "needs-fix"}`}>
-              {overview?.codex_version ? <CheckCircle2 className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-              <div>
-                <strong>{t("Codex 版本")}</strong>
-                <span>{overview?.codex_version ?? t("未检测到 Codex 应用版本。")}</span>
-              </div>
-              <Badge status={overview?.codex_version ? "ok" : "not_checked"} />
-            </div>
-            {health.map((item) => (
-              <div className={`health-item ${item.ok ? "ok" : "needs-fix"}`} key={item.title}>
-                {item.ok ? <CheckCircle2 className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-                <div>
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
-                </div>
-                <Badge status={item.status} />
-              </div>
-            ))}
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.checkHealth()}>
-              <RefreshCw className="h-4 w-4" />
-              {t("检查")}
-            </Button>
-            <Button variant="secondary" onClick={() => void actions.repairShortcuts()}>
-              <Wrench className="h-4 w-4" />
-              {t("修复入口")}
-            </Button>
-            <Button disabled={pluginMarketplaceProgress.active} variant="secondary" onClick={() => void actions.repairPluginMarketplace()}>
-              {pluginMarketplaceProgress.active ? t("正在修复…") : t("修复插件市场")}
-            </Button>
-          </Toolbar>
-          <TaskProgressBox progress={pluginMarketplaceProgress} title={t("插件市场修复进度")} />
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("最近启动")} detail={overview?.logs_path ?? t("暂无状态文件")} />
-        <CardContent>
-          <LatestLaunch status={overview?.latest_launch ?? null} />
-          <Toolbar>
-            <Button onClick={() => void actions.launch()}>
-              <Rocket className="h-4 w-4" />
-              {t("启动 Codex++")}
-            </Button>
-            <Button variant="secondary" onClick={() => void actions.goLogs()}>
-              {t("打开关于")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-    </>
   );
 });
 
@@ -9424,11 +9354,6 @@ function formatBytes(bytes: number) {
   return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
 }
 
-function formatProgressPercent(value: number): string {
-  if (!Number.isFinite(value)) return "0.00";
-  return Math.min(100, Math.max(0, value)).toFixed(2);
-}
-
 function GuideList({ items }: { items: string[] }) {
   return (
     <div className="guide-list">
@@ -9746,49 +9671,6 @@ function DreamSkinCommunityLinkDialog({
   );
 }
 
-function TaskProgressBox({ progress, title, completedTitle = t("上次修复结果") }: { progress: TaskProgress; title: string; completedTitle?: string }) {
-  if (!progress.active && progress.percent <= 0) return null;
-  return (
-    <div className="provider-sync-progress task-progress" data-active={progress.active}>
-      <div className="provider-sync-progress-head">
-        <strong>{progress.active ? title : completedTitle}</strong>
-        <span>{formatProgressPercent(progress.percent)}%</span>
-      </div>
-      <div
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={progress.percent}
-        className="provider-sync-progress-bar"
-        role="progressbar"
-      >
-        <div className="provider-sync-progress-fill" style={{ width: `${progress.percent}%` }} />
-      </div>
-      <small>{progress.message}</small>
-    </div>
-  );
-}
-
-function Panel({ children, fill = false, className = "" }: { children: React.ReactNode; fill?: boolean; className?: string }) {
-  return (
-    <Card className={`panel ${fill ? "fill" : ""} ${className}`}>
-      {children}
-    </Card>
-  );
-}
-
-function CardHead({ title, detail }: { title: string; detail: string }) {
-  return (
-    <CardHeader className="panel-head">
-      <CardTitle>{title}</CardTitle>
-      <CardDescription>{detail}</CardDescription>
-    </CardHeader>
-  );
-}
-
-function Toolbar({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`toolbar ${className}`.trim()}>{children}</div>;
-}
-
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <Label className={`field ${className}`}>
@@ -9877,32 +9759,6 @@ function StatusRow({ title, status = "unknown", path }: { title: string; status?
       <span>{title}</span>
       <Badge status={status} />
       <code>{path || t("未记录路径")}</code>
-    </div>
-  );
-}
-
-function Badge({ status }: { status: string }) {
-  return <UiBadge className={statusClass(status)} variant="secondary">{statusLabel(status)}</UiBadge>;
-}
-
-function LatestLaunch({ status }: { status: LaunchStatus | null }) {
-  if (!status) return <div className="empty">{t("暂无启动状态。")}</div>;
-  return (
-    <div className="metric-list">
-      <Metric label={t("状态")} value={status.status} />
-      <Metric label={t("消息")} value={status.message} />
-      <Metric label="Debug" value={String(status.debug_port ?? "-")} />
-      <Metric label="Helper" value={String(status.helper_port ?? "-")} />
-      <Metric label={t("时间")} value={formatTime(status.started_at_ms)} />
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
@@ -10546,32 +10402,6 @@ function providerInitial(name: string) {
   return Array.from(trimmed)[0]?.toUpperCase() || t("供");
 }
 
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    found: t("已找到"),
-    missing: t("缺失"),
-    installed: t("已安装"),
-    ok: t("正常"),
-    running: t("运行中"),
-    running_degraded: t("运行中（增强等待中）"),
-    starting: t("启动中"),
-    failed: t("失败"),
-    archived: t("已归档"),
-    accepted: t("已受理"),
-    not_checked: t("未检查"),
-    not_implemented: t("未实现"),
-    disabled: t("已禁用"),
-    unknown: t("未知"),
-  };
-  return labels[status] ?? status;
-}
-
-function statusClass(status: string) {
-  if (["found", "installed", "ok", "running", "running_degraded"].includes(status)) return "good";
-  if (["failed", "missing"].includes(status)) return "bad";
-  return "warn";
-}
-
 function isSuccessStatus(status?: Status) {
   return status === "ok" || status === "accepted";
 }
@@ -10579,29 +10409,6 @@ function isSuccessStatus(status?: Status) {
 function truncateSessionDeletePreview(value: string) {
   const normalized = value.trim();
   return normalized.length > 20 ? `${normalized.slice(0, 20)}...` : normalized;
-}
-
-function healthItems(overview: OverviewResult | null) {
-  return [
-    {
-      title: t("Codex 应用"),
-      status: overview?.codex_app.status ?? "not_checked",
-      ok: overview?.codex_app.status === "found",
-      detail: overview?.codex_app.path || t("尚未检查 Codex 应用路径。"),
-    },
-    {
-      title: t("静默启动入口"),
-      status: overview?.silent_shortcut.status ?? "not_checked",
-      ok: overview?.silent_shortcut.status === "installed",
-      detail: overview?.silent_shortcut.path || t("缺少 Codex++ 静默启动快捷方式时可在安装维护页修复。"),
-    },
-    {
-      title: t("管理工具入口"),
-      status: overview?.management_shortcut.status ?? "not_checked",
-      ok: overview?.management_shortcut.status === "installed",
-      detail: overview?.management_shortcut.path || t("缺少管理工具快捷方式时可在安装维护页修复。"),
-    },
-  ];
 }
 
 function normalizeSettings(settings: BackendSettings): BackendSettings {
@@ -11842,11 +11649,6 @@ function zedRemoteSourceLabel(source: string) {
   if (source === "sqliteThreadCwd") return "SQLite cwd";
   if (source === "recent") return t("最近打开");
   return source || t("未知来源");
-}
-
-function formatTime(value: number) {
-  if (!value) return "-";
-  return new Date(value).toLocaleString("zh-CN");
 }
 
 function formatDuration(startedAtMs: number): string {
