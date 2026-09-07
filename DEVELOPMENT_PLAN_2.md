@@ -401,6 +401,19 @@ graph TD
   - **验收标准**：
     - 多种非标 API 与微信接入场景流式输出稳定。
 
+- **✅ 实际步骤与结果 (Actual Steps & Results)**：
+  - 已将 WeChat app-server 的 sandbox 输出统一映射为 `readOnly`、`workspaceWrite`、`dangerFullAccess`；connect 配置输入同时兼容 camelCase 与既有 kebab-case，并继续以 kebab-case 保存内部状态。
+  - 已为 Pure API / Mixed API 及非 OpenAI 官方混合上游增加 Responses tool 兼容层：将非 `function` 工具转换为顶层 Responses `function`，处理 namespace 展平、`tool_choice`、历史 custom tool call，并在非流式与 SSE 流式响应边界恢复 `custom_tool_call`；普通 function tool 保持原样。
+  - 已将脚本市场下载收紧为 HTTPS、仅跟随 HTTPS 重定向、5 MiB 流式大小上限；清单声明 `sha256` 时在创建目录和原子写入前校验。
+  - 已让更新器读取资产级 `sha256` / `hash` / GitHub `digest` 与顶层 hash，并将摘要传给 manager；安装包写入前校验 SHA-256，失败时不创建或覆盖目标文件。
+  - 已补充 app-server、协议请求/响应/SSE、脚本市场和更新器回归测试；未引入签名系统或 ZIP 解压配额等超出当前证据范围的重构。
+
+- **🔍 验证与证据边界 (Verification)**：
+  - `apps/codex-plus-manager`: `npm test` 200/200 通过；`npm run inject:check` 通过，`renderer-inject.js` 483004 bytes，SHA-256 `01e0f4f33fed22227012fd7bc55c9bfa538073e918bb6484cebf2f7d6959e612`。
+  - `git diff --check` 通过；新增 diff 的 credential-like 扫描为 0，未新增 API Key、Bearer 或 Cookie fixture。
+  - `npm run check` 当前环境因缺少 `tsc` 退出，`npm run vite:build` 因缺少 `vite` 退出；`cargo`、`rustc`、`rustfmt` 当前环境均不可用，因此 Rust 编译、Rust 回归测试、真实桌面/E2E 和 CI 仍未验证，不能将本地结果表述为完整通过。
+  - 架构师审查通过，已按常规提交 `feat(protocol): implement BUG-011 WeChat sandbox enum, custom tool downgrade and package hash verification` 合入并推送到 `origin/Gemini`。
+
 ---
 
 ## 🛑 跨任务数据安全准则与终止条件

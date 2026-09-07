@@ -735,6 +735,7 @@ export type UpdateResult = CommandResult<{
   releaseSummary?: string;
   assetName?: string | null;
   assetUrl?: string | null;
+  assetSha256?: string | null;
   updateAvailable?: boolean;
   installedPath?: string;
   progress?: number;
@@ -2244,6 +2245,7 @@ export function App() {
             body: update.releaseSummary ?? "",
             asset_name: update.assetName,
             asset_url: update.assetUrl,
+            sha256: update.assetSha256 ?? null,
           }
         : null;
     setUpdateInstallProgress({

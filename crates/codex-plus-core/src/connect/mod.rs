@@ -369,8 +369,9 @@ fn is_allowed_peer(allow_from: &str, peer: &str) -> bool {
 
 fn normalize_sandbox(value: &str) -> String {
     match value.trim() {
-        "workspace-write" => "workspace-write",
-        "danger-full-access" => "danger-full-access",
+        "workspace-write" | "workspaceWrite" => "workspace-write",
+        "danger-full-access" | "dangerFullAccess" => "danger-full-access",
+        "read-only" | "readOnly" => "read-only",
         _ => "read-only",
     }
     .to_string()
@@ -422,6 +423,17 @@ mod tests {
         .normalized();
         assert_eq!(config.base_url, "https://example.test");
         assert_eq!(config.sandbox, "read-only");
+    }
+
+    #[test]
+    fn config_normalizes_camel_case_sandbox_without_changing_internal_state() {
+        let config = WeixinConnectConfig {
+            sandbox: "dangerFullAccess".to_string(),
+            ..WeixinConnectConfig::default()
+        }
+        .normalized();
+
+        assert_eq!(config.sandbox, "danger-full-access");
     }
 
     #[test]

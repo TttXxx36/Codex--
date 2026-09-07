@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 pub const DEFAULT_REPOSITORY: &str = "TttXxx36/Codex--";
 pub const DEFAULT_LATEST_JSON_URL: &str =
@@ -23,6 +24,8 @@ pub struct Release {
     pub body: String,
     pub asset_name: Option<String>,
     pub asset_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -32,6 +35,7 @@ pub struct UpdateCheck {
     pub release_summary: String,
     pub asset_name: Option<String>,
     pub asset_url: Option<String>,
+    pub asset_sha256: Option<String>,
     pub update_available: bool,
 }
 
@@ -89,6 +93,10 @@ pub fn release_from_github_payload(payload: &Value) -> anyhow::Result<Release> {
         })
         .collect::<Vec<_>>();
     let selected = select_update_asset(&assets);
+    let sha256 = selected
+        .as_ref()
+        .and_then(|asset| asset_sha256_from_payload(payload, &asset.name))
+        .or_else(|| payload_hash(payload));
     Ok(Release {
         version,
         url: payload
@@ -103,6 +111,7 @@ pub fn release_from_github_payload(payload: &Value) -> anyhow::Result<Release> {
             .to_string(),
         asset_name: selected.as_ref().map(|asset| asset.name.clone()),
         asset_url: selected.map(|asset| asset.browser_download_url),
+        sha256,
     })
 }
 
@@ -129,6 +138,10 @@ pub fn release_from_latest_json_payload(payload: &Value) -> anyhow::Result<Relea
         })
         .collect::<Vec<_>>();
     let selected = select_update_asset(&assets);
+    let sha256 = selected
+        .as_ref()
+        .and_then(|asset| asset_sha256_from_payload(payload, &asset.name))
+        .or_else(|| payload_hash(payload));
     Ok(Release {
         version,
         url: payload
@@ -146,6 +159,7 @@ pub fn release_from_latest_json_payload(payload: &Value) -> anyhow::Result<Relea
             .to_string(),
         asset_name: selected.as_ref().map(|asset| asset.name.clone()),
         asset_url: selected.map(|asset| asset.browser_download_url),
+        sha256,
     })
 }
 
@@ -191,6 +205,7 @@ pub async fn check_for_update(current_version: &str) -> anyhow::Result<UpdateChe
         release_summary: release.body,
         asset_name: release.asset_name,
         asset_url: release.asset_url,
+        asset_sha256: release.sha256,
         update_available,
     })
 }
@@ -315,6 +330,7 @@ pub fn download_asset_to(
     bytes: &[u8],
     download_dir: &Path,
 ) -> anyhow::Result<PathBuf> {
+    verify_release_sha256(release.sha256.as_deref(), bytes)?;
     let name = release
         .asset_name
         .as_ref()
@@ -324,6 +340,55 @@ pub fn download_asset_to(
     let path = download_dir.join(safe);
     std::fs::write(&path, bytes)?;
     Ok(path)
+}
+
+fn asset_sha256_from_payload(payload: &Value, asset_name: &str) -> Option<String> {
+    payload
+        .get("assets")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|asset| asset.get("name").and_then(Value::as_str) == Some(asset_name))
+        .and_then(|asset| {
+            asset
+                .get("sha256")
+                .or_else(|| asset.get("hash"))
+                .or_else(|| asset.get("digest"))
+        })
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn payload_hash(payload: &Value) -> Option<String> {
+    payload
+        .get("sha256")
+        .or_else(|| payload.get("hash"))
+        .or_else(|| payload.get("digest"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn verify_release_sha256(expected: Option<&str>, bytes: &[u8]) -> anyhow::Result<()> {
+    let Some(expected) = expected.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let expected = expected
+        .strip_prefix("sha256:")
+        .or_else(|| expected.strip_prefix("SHA256:"))
+        .unwrap_or(expected)
+        .trim();
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        anyhow::bail!("Release SHA-256 格式无效");
+    }
+    let actual = format!("{:x}", Sha256::digest(bytes));
+    if !actual.eq_ignore_ascii_case(expected) {
+        anyhow::bail!("Release SHA-256 校验失败");
+    }
+    Ok(())
 }
 
 pub fn safe_asset_name(name: &str) -> anyhow::Result<String> {

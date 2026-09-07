@@ -7,7 +7,9 @@ use codex_plus_core::protocol_proxy::{
     open_chat_completions_proxy_request, open_models_proxy_request, open_responses_proxy_request,
     open_responses_proxy_request_with_settings,
     open_responses_proxy_request_with_settings_for_path, responses_compact_url,
-    responses_error_from_upstream, responses_to_chat_completions,
+    normalize_responses_response_for_request, responses_error_from_upstream,
+    responses_sse_to_responses_sse_with_request,
+    responses_to_chat_completions,
     send_upstream_request_with_header_timeout, upstream_header_timeout, upstream_http_client,
     upstream_stream_header_timeout,
 };
@@ -869,6 +871,65 @@ fn responses_request_stream_includes_usage_and_apply_patch_proxy_tools() {
         converted["tool_choice"]["function"]["name"],
         "apply_patch_batch"
     );
+}
+
+#[test]
+fn responses_function_call_is_restored_to_custom_tool_call_for_original_request() {
+    let response = normalize_responses_response_for_request(
+        json!({
+            "output": [{
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_1",
+                "name": "exec",
+                "arguments": "{\"input\":\"pwd\"}"
+            }]
+        }),
+        &json!({
+            "tools": [{ "type": "custom", "name": "exec" }]
+        }),
+    );
+
+    assert_eq!(response["output"][0]["type"], "custom_tool_call");
+    assert_eq!(response["output"][0]["id"], "ctc_call_1");
+    assert_eq!(response["output"][0]["name"], "exec");
+    assert_eq!(response["output"][0]["input"], "pwd");
+    assert!(response["output"][0].get("arguments").is_none());
+}
+
+#[test]
+fn responses_sse_function_call_is_restored_to_custom_tool_stream() {
+    let converted = responses_sse_to_responses_sse_with_request(
+        r#"event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","status":"in_progress","call_id":"call_1","name":"exec","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"input\":\"pwd\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":0,"arguments":"{\"input\":\"pwd\"}"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","status":"completed","call_id":"call_1","name":"exec","arguments":"{\"input\":\"pwd\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output":[{"id":"fc_1","type":"function_call","status":"completed","call_id":"call_1","name":"exec","arguments":"{\"input\":\"pwd\"}"}]}}
+
+data: [DONE]
+
+"#,
+        &json!({
+            "tools": [{ "type": "custom", "name": "exec" }]
+        }),
+    );
+
+    assert!(converted.contains("\"type\":\"custom_tool_call\""));
+    assert!(converted.contains("\"id\":\"ctc_call_1\""));
+    assert!(converted.contains("\"input\":\"pwd\""));
+    assert!(converted.contains("event: response.custom_tool_call_input.delta"));
+    assert!(!converted.contains("response.function_call_arguments.delta"));
+    assert!(!converted.contains("response.function_call_arguments.done"));
+    assert!(converted.contains("data: [DONE]"));
 }
 
 #[test]
@@ -1998,6 +2059,65 @@ async fn responses_proxy_normalizes_legacy_custom_tool_item_ids_only() {
     assert_eq!(upstream_body["input"][0]["id"], "ctc_legacy_custom_item");
     assert_eq!(upstream_body["input"][0]["call_id"], "call_legacy_custom");
     assert_eq!(upstream_body["input"][1]["type"], "message");
+}
+
+#[tokio::test]
+async fn third_party_responses_gateway_downgrades_non_function_tools() {
+    let target = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let target_addr = target.local_addr().unwrap();
+    let target_server = tokio::spawn(capture_json_request_once(target));
+    let request = json!({
+        "model": "mimo-v2.5-pro",
+        "input": [
+            {
+                "type": "custom_tool_call",
+                "call_id": "call_custom",
+                "name": "exec",
+                "input": "pwd"
+            }
+        ],
+        "tools": [
+            { "type": "custom", "name": "exec", "description": "Run a command" },
+            { "type": "computer_use", "name": "computer_use" }
+        ],
+        "tool_choice": { "type": "custom", "name": "exec" },
+        "stream": false
+    });
+    let mut settings = model_route_settings(
+        "mimo-v2.5-pro",
+        "",
+        format!("http://{target_addr}/v1"),
+    );
+    settings.relay_profiles[1].relay_mode = RelayMode::PureApi;
+
+    let result = open_responses_proxy_request_with_settings(&request.to_string(), settings)
+        .await
+        .unwrap();
+    assert_eq!(result.status_code, 200);
+    let (_, upstream_body) = target_server.await.unwrap();
+
+    assert_eq!(
+        upstream_body["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["function", "function"]
+    );
+    assert_eq!(upstream_body["tools"][0]["name"], "exec");
+    assert_eq!(
+        upstream_body["tools"][1]["parameters"]["properties"]["input"]["type"],
+        "string"
+    );
+    assert_eq!(upstream_body["tool_choice"], json!({ "type": "function", "name": "exec" }));
+    assert_eq!(upstream_body["input"][0]["type"], "function_call");
+    assert_eq!(upstream_body["input"][0]["arguments"], r#"{"input":"pwd"}"#);
+    assert!(!serde_json::to_string(&upstream_body)
+        .unwrap()
+        .contains("\"type\":\"custom\""));
 }
 
 #[tokio::test]

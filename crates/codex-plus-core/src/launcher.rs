@@ -1901,12 +1901,27 @@ async fn handle_protocol_proxy_connection(
     if upstream.is_stream {
         write_http_stream_headers(stream, "200 OK", "text/event-stream; charset=utf-8").await?;
         if upstream.wire_api == crate::protocol_proxy::UpstreamWireApi::Responses {
+            let mut converter = request_json.as_ref().map(
+                crate::protocol_proxy::ResponsesSseCustomToolConverter::with_request,
+            );
             let mut bytes_stream = upstream.response.bytes_stream();
             while let Some(chunk) = bytes_stream.next().await {
                 if let Ok(bytes) = chunk {
-                    stream.write_all(&bytes).await?;
+                    let converted = converter
+                        .as_mut()
+                        .map(|converter| converter.push_bytes(&bytes))
+                        .unwrap_or(bytes.to_vec());
+                    if !converted.is_empty() {
+                        stream.write_all(&converted).await?;
+                    }
                 } else {
                     break;
+                }
+            }
+            if let Some(converter) = converter.as_mut() {
+                let tail = converter.finish();
+                if !tail.is_empty() {
+                    stream.write_all(&tail).await?;
                 }
             }
             log_helper_response(
@@ -1964,6 +1979,18 @@ async fn handle_protocol_proxy_connection(
     }
     let upstream_body = upstream.response.bytes().await?;
     if upstream.wire_api == crate::protocol_proxy::UpstreamWireApi::Responses {
+        let body = request_json
+            .as_ref()
+            .map(|request| {
+                crate::protocol_proxy::normalize_responses_response_for_request(
+                    serde_json::from_slice(&upstream_body).unwrap_or(serde_json::Value::Null),
+                    request,
+                )
+            });
+        let body = match body {
+            Some(serde_json::Value::Null) | None => upstream_body,
+            Some(body) => serde_json::to_vec(&body)?,
+        };
         write_http_response(
             stream,
             "200 OK",
@@ -1972,7 +1999,7 @@ async fn handle_protocol_proxy_connection(
             } else {
                 &upstream.content_type
             },
-            &upstream_body,
+            &body,
         )
         .await?;
         log_helper_response(

@@ -3,6 +3,7 @@ use codex_plus_core::update::{
     release_from_latest_json_payload, safe_asset_name, select_update_asset,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 #[test]
 fn parse_version_tag_accepts_prefix_and_suffix() {
@@ -51,13 +52,14 @@ fn github_payload_selects_platform_installer() {
 
 #[test]
 fn latest_json_payload_selects_platform_installer_without_github_api_shape() {
+    let expected_hash = format!("{:x}", Sha256::digest(b"installer"));
     let release = release_from_latest_json_payload(&json!({
         "version": "v1.1.6",
         "url": "https://github.com/BigPizzaV3/CodexPlusPlus/releases/tag/v1.1.6",
         "body": "静态更新描述",
         "assets": [
             {"name": "source.zip", "url": "https://example.test/source.zip"},
-            {"name": "CodexPlusPlus-1.1.6-windows-x64-setup.exe", "url": "https://example.test/setup.exe"},
+            {"name": "CodexPlusPlus-1.1.6-windows-x64-setup.exe", "url": "https://example.test/setup.exe", "sha256": expected_hash},
             {"name": "CodexPlusPlus-1.1.6-macos-x64.dmg", "url": "https://example.test/app.dmg"}
         ]
     }))
@@ -65,6 +67,9 @@ fn latest_json_payload_selects_platform_installer_without_github_api_shape() {
 
     assert_eq!(release.version, "v1.1.6");
     assert_eq!(release.body, "静态更新描述");
+    if cfg!(windows) {
+        assert_eq!(release.sha256.as_deref(), Some(expected_hash.as_str()));
+    }
     if cfg!(windows) {
         assert_eq!(
             release.asset_name.as_deref(),
@@ -77,6 +82,24 @@ fn latest_json_payload_selects_platform_installer_without_github_api_shape() {
         );
     } else {
         assert_eq!(release.asset_name.as_deref(), None);
+    }
+}
+
+#[test]
+fn github_payload_accepts_asset_digest_with_sha256_prefix() {
+    let expected_hash = format!("sha256:{:x}", Sha256::digest(b"installer"));
+    let release = release_from_github_payload(&json!({
+        "tag_name": "v1.1.7",
+        "assets": [{
+            "name": "CodexPlusPlus-1.1.7-windows-x64-setup.exe",
+            "browser_download_url": "https://example.test/setup.exe",
+            "digest": expected_hash
+        }]
+    }))
+    .unwrap();
+
+    if cfg!(windows) {
+        assert_eq!(release.sha256.as_deref(), Some(expected_hash.as_str()));
     }
 }
 
@@ -162,10 +185,29 @@ fn download_asset_to_writes_bytes() {
         body: "fixes".to_string(),
         asset_name: Some("pkg.zip".to_string()),
         asset_url: Some("https://example.test/pkg.zip".to_string()),
+        sha256: None,
     };
 
     let path = download_asset_to(&release, b"abcdef", dir.path()).unwrap();
 
     assert_eq!(path, dir.path().join("pkg.zip"));
     assert_eq!(std::fs::read(path).unwrap(), b"abcdef");
+}
+
+#[test]
+fn download_asset_to_rejects_release_hash_mismatch_before_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let release = Release {
+        version: "v1.0.9".to_string(),
+        url: "https://example.test".to_string(),
+        body: "fixes".to_string(),
+        asset_name: Some("pkg.zip".to_string()),
+        asset_url: Some("https://example.test/pkg.zip".to_string()),
+        sha256: Some("0".repeat(64)),
+    };
+
+    let error = download_asset_to(&release, b"abcdef", dir.path()).unwrap_err();
+
+    assert!(error.to_string().contains("SHA-256 校验失败"));
+    assert!(!dir.path().join("pkg.zip").exists());
 }

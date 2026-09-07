@@ -10,7 +10,7 @@ use anyhow::Context;
 use serde_json::{Value, json};
 
 use crate::relay_rotation::{RotationContext, RotationEvent};
-use crate::settings::{RelayProtocol, SettingsStore};
+use crate::settings::{RelayMode, RelayProtocol, SettingsStore};
 
 pub const DEFAULT_PROTOCOL_PROXY_PORT: u16 = 57321;
 pub const NO_AUTH_PROXY_BEARER_TOKEN: &str = "codex-plus-no-auth";
@@ -926,6 +926,9 @@ async fn upstream_request_parts(
     };
     if relay.protocol == RelayProtocol::Responses {
         normalize_responses_custom_tool_call_ids(&mut body);
+        if should_downgrade_responses_tools(relay) {
+            normalize_responses_tools_for_gateway(&mut body);
+        }
     }
 
     // Image handling (per-model): send-as-is / strip / VLM analysis
@@ -1016,6 +1019,621 @@ fn upstream_request_builder(
     builder.json(upstream_body)
 }
 
+fn should_downgrade_responses_tools(relay: &crate::settings::RelayProfile) -> bool {
+    if relay.protocol != RelayProtocol::Responses {
+        return false;
+    }
+    if matches!(relay.relay_mode, RelayMode::PureApi | RelayMode::MixedApi) {
+        return true;
+    }
+    if !relay.official_mix_api_key {
+        return false;
+    }
+
+    let base_url = if relay.upstream_base_url.trim().is_empty() {
+        relay.base_url.trim()
+    } else {
+        relay.upstream_base_url.trim()
+    };
+    let is_openai = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(|host| host.eq_ignore_ascii_case("api.openai.com")))
+        .unwrap_or(false);
+    !is_openai
+}
+
+fn normalize_responses_tools_for_gateway(body: &mut Value) {
+    if let Some(tools) = body.get("tools").and_then(Value::as_array).cloned() {
+        body["tools"] = json!(responses_tools_to_responses_functions(&tools));
+    }
+    if let Some(tool_choice) = body.get("tool_choice").cloned() {
+        body["tool_choice"] = responses_tool_choice_to_responses_function(&tool_choice);
+    }
+    normalize_responses_custom_history_for_gateway(body);
+}
+
+fn responses_tools_to_responses_functions(tools: &[Value]) -> Vec<Value> {
+    let mut converted = Vec::new();
+    for tool in tools {
+        if let Some(name) = tool.as_str().filter(|name| !name.trim().is_empty()) {
+            converted.push(generic_custom_responses_tool(name, ""));
+            continue;
+        }
+        let tool_type = tool.get("type").and_then(Value::as_str).unwrap_or("");
+        match tool_type {
+            "function" => {
+                if let Some(tool) = responses_function_tool_to_responses_tool(tool, None) {
+                    converted.push(tool);
+                }
+            }
+            "namespace" => {
+                converted.extend(namespace_tool_to_responses_functions(tool));
+            }
+            _ => {
+                let name = tool
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or(tool_type);
+                if !name.trim().is_empty() {
+                    converted.push(generic_custom_responses_tool(
+                        name,
+                        tool.get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or(""),
+                    ));
+                }
+            }
+        }
+    }
+    converted
+}
+
+fn responses_function_tool_to_responses_tool(
+    tool: &Value,
+    name_override: Option<&str>,
+) -> Option<Value> {
+    let nested = tool.get("function");
+    let name = name_override
+        .or_else(|| tool.get("name").and_then(Value::as_str))
+        .or_else(|| nested.and_then(|value| value.get("name")).and_then(Value::as_str))
+        .filter(|name| !name.trim().is_empty())?;
+    let description = tool
+        .get("description")
+        .or_else(|| nested.and_then(|value| value.get("description")))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let parameters = tool
+        .get("parameters")
+        .or_else(|| nested.and_then(|value| value.get("parameters")))
+        .unwrap_or(&json!({}));
+    let mut normalized = json!({
+        "type": "function",
+        "name": name,
+        "parameters": normalize_chat_tool_parameters(parameters)
+    });
+    if !description.trim().is_empty() {
+        normalized["description"] = json!(description.trim());
+    }
+    if let Some(strict) = tool
+        .get("strict")
+        .or_else(|| nested.and_then(|value| value.get("strict")))
+    {
+        normalized["strict"] = strict.clone();
+    }
+    Some(normalized)
+}
+
+fn namespace_tool_to_responses_functions(namespace_tool: &Value) -> Vec<Value> {
+    let namespace = namespace_tool
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let Some(children) = namespace_tool.get("tools").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut converted = Vec::new();
+    for child in children {
+        if child.get("type").and_then(Value::as_str) != Some("function") {
+            continue;
+        }
+        let child_name = child.get("name").and_then(Value::as_str).or_else(|| {
+            child
+                .get("function")
+                .and_then(|value| value.get("name"))
+                .and_then(Value::as_str)
+        });
+        let Some(child_name) = child_name.filter(|name| !name.trim().is_empty()) else {
+            continue;
+        };
+        let flat = flatten_namespace_tool_name(namespace, child_name);
+        if let Some(tool) = responses_function_tool_to_responses_tool(child, Some(&flat)) {
+            converted.push(tool);
+        }
+    }
+    converted
+}
+
+fn generic_custom_responses_tool(name: &str, description: &str) -> Value {
+    let description = if description.trim().is_empty() {
+        format!("FREEFORM custom tool: {name}. Put the raw tool input in the input field.")
+    } else {
+        format!(
+            "{}\n\nThis compatibility tool accepts its raw input in the input field.",
+            description.trim()
+        )
+    };
+    json!({
+        "type": "function",
+        "name": name,
+        "description": description,
+        "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "description": "Raw freeform input for this compatibility tool."
+                }
+            },
+            "required": ["input"]
+        }
+    })
+}
+
+fn responses_tool_choice_to_responses_function(value: &Value) -> Value {
+    let Value::Object(object) = value else {
+        return value.clone();
+    };
+    let tool_type = object.get("type").and_then(Value::as_str).unwrap_or("");
+    if tool_type == "allowed_tools" {
+        let mut normalized = object.clone();
+        if let Some(tools) = object.get("tools").and_then(Value::as_array) {
+            normalized.insert(
+                "tools".to_string(),
+                Value::Array(
+                    tools
+                        .iter()
+                        .map(responses_allowed_tool_to_function)
+                        .collect(),
+                ),
+            );
+        }
+        return Value::Object(normalized);
+    }
+    if tool_type == "function" || !tool_type.is_empty() {
+        let name = object
+            .get("name")
+            .and_then(Value::as_str)
+            .or_else(|| {
+                object
+                    .get("function")
+                    .and_then(|function| function.get("name"))
+                    .and_then(Value::as_str)
+            })
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(tool_type);
+        return json!({ "type": "function", "name": name });
+    }
+    value.clone()
+}
+
+fn responses_allowed_tool_to_function(value: &Value) -> Value {
+    let Some(object) = value.as_object() else {
+        return value.clone();
+    };
+    let tool_type = object.get("type").and_then(Value::as_str).unwrap_or("");
+    let name = object
+        .get("name")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            object
+                .get("function")
+                .and_then(|function| function.get("name"))
+                .and_then(Value::as_str)
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(tool_type);
+    if name.is_empty() {
+        value.clone()
+    } else {
+        json!({ "type": "function", "name": name })
+    }
+}
+
+fn normalize_responses_custom_history_for_gateway(body: &mut Value) {
+    let Some(input) = body.get_mut("input").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for item in input {
+        match item.get("type").and_then(Value::as_str) {
+            Some("custom_tool_call") => {
+                let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                let raw_input = item
+                    .get("input")
+                    .or_else(|| item.get("arguments"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let arguments = match raw_input {
+                    Value::String(text) => json!({ "input": text }),
+                    Value::Null => json!({ "input": "" }),
+                    other => json!({ "input": response_output_text(&other) }),
+                };
+                item["type"] = json!("function_call");
+                item["name"] = json!(name);
+                item["arguments"] = Value::String(canonical_json_string(&arguments));
+                if let Some(object) = item.as_object_mut() {
+                    object.remove("input");
+                }
+            }
+            Some("custom_tool_call_output") => {
+                item["type"] = json!("function_call_output");
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn normalize_responses_response_for_request(
+    response: Value,
+    original_request: &Value,
+) -> Value {
+    let context = build_codex_tool_context(original_request.get("tools"));
+    normalize_responses_response_with_context(response, &context)
+}
+
+fn normalize_responses_response_with_context(
+    mut response: Value,
+    context: &CodexToolContext,
+) -> Value {
+    let Some(output) = response.get_mut("output").and_then(Value::as_array_mut) else {
+        return response;
+    };
+    for item in output {
+        if item.get("type").and_then(Value::as_str) != Some("function_call") {
+            continue;
+        }
+        let Some(name) = item.get("name").and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        let Some(spec) = context.custom_tools.get(&name) else {
+            continue;
+        };
+        let arguments = responses_arguments_to_chat(item.get("arguments").unwrap_or(&json!({})));
+        let call_id = item
+            .get("call_id")
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        item["type"] = json!("custom_tool_call");
+        item["id"] = json!(tool_call_item_id(&call_id, &name, context));
+        item["name"] = json!(spec.openai_name.clone());
+        item["input"] = json!(reconstruct_custom_tool_call_input_with_context(
+            context,
+            &name,
+            &arguments
+        ));
+        if let Some(object) = item.as_object_mut() {
+            object.remove("arguments");
+        }
+    }
+    response
+}
+
+/// 将第三方 Responses 网关返回的 function-call SSE 事件恢复为 Codex
+/// custom-tool 事件；普通 function tool 事件保持原样透传。
+#[derive(Debug, Default)]
+pub struct ResponsesSseCustomToolConverter {
+    buffer: String,
+    utf8_remainder: Vec<u8>,
+    tool_context: CodexToolContext,
+    custom_calls: BTreeMap<String, ResponsesSseCustomCallState>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ResponsesSseCustomCallState {
+    call_id: String,
+    name: String,
+    item_id: String,
+    output_index: u64,
+    arguments: String,
+}
+
+impl ResponsesSseCustomToolConverter {
+    pub fn with_request(original_request: &Value) -> Self {
+        Self {
+            tool_context: build_codex_tool_context(original_request.get("tools")),
+            ..Self::default()
+        }
+    }
+
+    pub fn push_bytes(&mut self, bytes: &[u8]) -> Vec<u8> {
+        append_utf8_safe(&mut self.buffer, &mut self.utf8_remainder, bytes);
+        let mut output = String::new();
+        while let Some(block) = take_sse_block(&mut self.buffer) {
+            if !block.trim().is_empty() {
+                self.handle_block(&block, &mut output);
+            }
+        }
+        output.into_bytes()
+    }
+
+    pub fn finish(&mut self) -> Vec<u8> {
+        if !self.utf8_remainder.is_empty() {
+            self.buffer
+                .push_str(&String::from_utf8_lossy(&self.utf8_remainder));
+            self.utf8_remainder.clear();
+        }
+        let mut output = String::new();
+        if !self.buffer.trim().is_empty() {
+            let block = std::mem::take(&mut self.buffer);
+            self.handle_block(&block, &mut output);
+        }
+        output.into_bytes()
+    }
+
+    fn handle_block(&mut self, block: &str, output: &mut String) {
+        let mut event_name = None;
+        let mut data_parts = Vec::new();
+        for line in block.lines() {
+            if let Some(event) = strip_sse_field(line, "event") {
+                event_name = Some(event.trim().to_string());
+            }
+            if let Some(data) = strip_sse_field(line, "data") {
+                data_parts.push(data.to_string());
+            }
+        }
+        if data_parts.is_empty() {
+            append_raw_sse_block(output, block);
+            return;
+        }
+
+        let data = data_parts.join("\n");
+        if data.trim() == "[DONE]" {
+            append_sse_data(output, event_name.as_deref(), &data);
+            return;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&data) else {
+            append_raw_sse_block(output, block);
+            return;
+        };
+        let event = event_name
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                value
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            })
+            .unwrap_or_default();
+        let Some((event, value)) = self.normalize_event(Some(&event), value) else {
+            return;
+        };
+        append_sse_json(output, &event, &value);
+    }
+
+    fn normalize_event(&mut self, event: Option<&str>, mut value: Value) -> Option<(String, Value)> {
+        let event = event.unwrap_or_default();
+        match event {
+            "response.output_item.added" => {
+                self.normalize_output_item_added(&mut value);
+                Some((event.to_string(), value))
+            }
+            "response.function_call_arguments.delta" => {
+                self.normalize_function_call_arguments_delta(&value)
+            }
+            "response.function_call_arguments.done" => {
+                self.normalize_function_call_arguments_done(&value)
+            }
+            "response.output_item.done" => {
+                self.normalize_output_item_done(&mut value);
+                Some((event.to_string(), value))
+            }
+            "response.completed" => {
+                if let Some(response) = value.get_mut("response") {
+                    *response = normalize_responses_response_with_context(
+                        response.clone(),
+                        &self.tool_context,
+                    );
+                }
+                Some((event.to_string(), value))
+            }
+            _ => Some((event.to_string(), value)),
+        }
+    }
+
+    fn normalize_output_item_added(&mut self, value: &mut Value) {
+        let output_index = value
+            .get("output_index")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let Some(item) = value.get("item") else {
+            return;
+        };
+        if item.get("type").and_then(Value::as_str) != Some("function_call") {
+            return;
+        }
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if !self.tool_context.is_custom_tool_proxy(&name) {
+            return;
+        }
+        let call_id = item
+            .get("call_id")
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let source_item_id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(call_id.as_str())
+            .to_string();
+        let key = if source_item_id.is_empty() {
+            format!("output:{output_index}")
+        } else {
+            source_item_id.clone()
+        };
+        let target_item_id = tool_call_item_id(&call_id, &name, &self.tool_context);
+        let arguments = item
+            .get("arguments")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        self.custom_calls.insert(
+            key,
+            ResponsesSseCustomCallState {
+                call_id: call_id.clone(),
+                name: name.clone(),
+                item_id: target_item_id.clone(),
+                output_index,
+                arguments,
+            },
+        );
+        let Some(item) = value.get_mut("item") else {
+            return;
+        };
+        item["id"] = json!(target_item_id);
+        item["type"] = json!("custom_tool_call");
+        item["name"] = json!(self.tool_context.original_custom_tool_name(&name));
+        item["input"] = json!("");
+        if let Some(object) = item.as_object_mut() {
+            object.remove("arguments");
+            object.remove("namespace");
+        }
+    }
+
+    fn normalize_function_call_arguments_delta(&mut self, value: &Value) -> Option<(String, Value)> {
+        let source_item_id = value.get("item_id").and_then(Value::as_str).unwrap_or("");
+        let delta = value.get("delta").and_then(Value::as_str).unwrap_or("");
+        let Some(state) = self.custom_calls.get_mut(source_item_id) else {
+            return Some((
+                "response.function_call_arguments.delta".to_string(),
+                value.clone(),
+            ));
+        };
+        state.arguments.push_str(delta);
+        None
+    }
+
+    fn normalize_function_call_arguments_done(&mut self, value: &Value) -> Option<(String, Value)> {
+        let source_item_id = value.get("item_id").and_then(Value::as_str).unwrap_or("");
+        let Some(state) = self.custom_calls.get_mut(source_item_id) else {
+            return Some((
+                "response.function_call_arguments.done".to_string(),
+                value.clone(),
+            ));
+        };
+        if let Some(arguments) = value.get("arguments").and_then(Value::as_str) {
+            state.arguments = arguments.to_string();
+        }
+        let name = state.name.clone();
+        let arguments = state.arguments.clone();
+        let item_id = state.item_id.clone();
+        let call_id = state.call_id.clone();
+        let output_index = state.output_index;
+        let delta = reconstruct_custom_tool_call_input_with_context(
+            &self.tool_context,
+            &name,
+            &arguments,
+        );
+        Some((
+            "response.custom_tool_call_input.delta".to_string(),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": item_id,
+                "call_id": call_id,
+                "output_index": output_index,
+                "delta": delta
+            }),
+        ))
+    }
+
+    fn normalize_output_item_done(&mut self, value: &mut Value) {
+        let Some(item) = value.get("item") else {
+            return;
+        };
+        if item.get("type").and_then(Value::as_str) != Some("function_call") {
+            return;
+        }
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if !self.tool_context.is_custom_tool_proxy(&name) {
+            return;
+        }
+        let source_item_id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let call_id = item
+            .get("call_id")
+            .or_else(|| item.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let arguments = item
+            .get("arguments")
+            .and_then(Value::as_str)
+            .or_else(|| self.custom_calls.get(&source_item_id).map(|state| state.arguments.as_str()))
+            .unwrap_or("")
+            .to_string();
+        let normalized =
+            response_tool_call_item(&call_id, &name, &arguments, &self.tool_context);
+        if let Some(state) = self.custom_calls.get_mut(&source_item_id) {
+            state.arguments = arguments;
+            let normalized_item_id = normalized
+                .get("id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            if let Some(normalized_item_id) = normalized_item_id {
+                state.item_id = normalized_item_id;
+            }
+        }
+        value["item"] = normalized;
+    }
+}
+
+fn append_sse_data(output: &mut String, event: Option<&str>, data: &str) {
+    if let Some(event) = event.filter(|value| !value.trim().is_empty()) {
+        output.push_str("event: ");
+        output.push_str(event);
+        output.push('\n');
+    }
+    output.push_str("data: ");
+    output.push_str(data);
+    output.push_str("\n\n");
+}
+
+fn append_sse_json(output: &mut String, event: &str, data: &Value) {
+    let encoded = serde_json::to_string(data).unwrap_or_default();
+    append_sse_data(output, Some(event), &encoded);
+}
+
+fn append_raw_sse_block(output: &mut String, block: &str) {
+    output.push_str(block.trim_end_matches(|ch| matches!(ch, '\r' | '\n')));
+    output.push_str("\n\n");
+}
+
+/// 对已经完整读入内存的 Responses SSE 做同一套 custom-tool 兼容转换。
+pub fn responses_sse_to_responses_sse_with_request(
+    input: &str,
+    original_request: &Value,
+) -> String {
+    let mut converter = ResponsesSseCustomToolConverter::with_request(original_request);
+    let mut output = converter.push_bytes(input.as_bytes());
+    output.extend(converter.finish());
+    String::from_utf8(output).unwrap_or_default()
+}
+
 fn validate_upstream(relay: &crate::settings::RelayProfile) -> anyhow::Result<()> {
     if relay.base_url.trim().is_empty() {
         anyhow::bail!("上游 Base URL 不能为空");
@@ -1080,7 +1698,22 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
         });
     }
 
+    if is_stream {
+        let text = String::from_utf8_lossy(&upstream_body);
+        let body = if wire_api == UpstreamWireApi::Responses {
+            responses_sse_to_responses_sse_with_request(&text, &request_json)
+        } else {
+            chat_sse_to_responses_sse_with_request(&text, &request_json)
+        };
+        return Ok(ProxyHttpResponse {
+            status: "200 OK".to_string(),
+            content_type: "text/event-stream; charset=utf-8".to_string(),
+            body: body.into_bytes(),
+        });
+    }
+
     if wire_api == UpstreamWireApi::Responses {
+        let body = normalize_responses_response_for_request(upstream_body, &request_json);
         return Ok(ProxyHttpResponse {
             status: "200 OK".to_string(),
             content_type: if upstream_content_type.is_empty() {
@@ -1088,16 +1721,7 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
             } else {
                 upstream_content_type
             },
-            body: upstream_body.to_vec(),
-        });
-    }
-
-    if is_stream {
-        let text = String::from_utf8_lossy(&upstream_body);
-        return Ok(ProxyHttpResponse {
-            status: "200 OK".to_string(),
-            content_type: "text/event-stream; charset=utf-8".to_string(),
-            body: chat_sse_to_responses_sse_with_request(&text, &request_json).into_bytes(),
+            body: serde_json::to_vec(&body)?,
         });
     }
 

@@ -457,9 +457,10 @@ impl Drop for CodexAppServer {
 
 fn normalize_sandbox(value: &str) -> &'static str {
     match value.trim() {
-        "workspace-write" => "workspace-write",
-        "danger-full-access" => "danger-full-access",
-        _ => "read-only",
+        "workspace-write" | "workspaceWrite" => "workspaceWrite",
+        "danger-full-access" | "dangerFullAccess" => "dangerFullAccess",
+        "readOnly" | "read-only" => "readOnly",
+        _ => "readOnly",
     }
 }
 
@@ -614,6 +615,21 @@ mod tests {
             extract_turn_id(&json!({"turn": {"id": "turn-1"}})).as_deref(),
             Some("turn-1")
         );
+    }
+
+    #[test]
+    fn test_normalize_sandbox_for_app_server() {
+        for (input, expected) in [
+            ("read-only", "readOnly"),
+            ("readOnly", "readOnly"),
+            ("workspace-write", "workspaceWrite"),
+            ("workspaceWrite", "workspaceWrite"),
+            ("danger-full-access", "dangerFullAccess"),
+            ("dangerFullAccess", "dangerFullAccess"),
+            ("unknown", "readOnly"),
+        ] {
+            assert_eq!(normalize_sandbox(input), expected, "input={input}");
+        }
     }
 
     #[test]
