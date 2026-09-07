@@ -1274,11 +1274,19 @@ fn normalize_responses_custom_history_for_gateway(body: &mut Value) {
     }
 }
 
+pub fn request_has_custom_tools(request: &Value) -> bool {
+    let context = build_codex_tool_context(request.get("tools"));
+    context.has_custom_tools
+}
+
 pub fn normalize_responses_response_for_request(
     response: Value,
     original_request: &Value,
 ) -> Value {
     let context = build_codex_tool_context(original_request.get("tools"));
+    if !context.has_custom_tools {
+        return response;
+    }
     normalize_responses_response_with_context(response, &context)
 }
 
@@ -1286,6 +1294,9 @@ fn normalize_responses_response_with_context(
     mut response: Value,
     context: &CodexToolContext,
 ) -> Value {
+    if !context.has_custom_tools {
+        return response;
+    }
     let Some(output) = response.get_mut("output").and_then(Value::as_array_mut) else {
         return response;
     };
@@ -1349,6 +1360,9 @@ impl ResponsesSseCustomToolConverter {
     }
 
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Vec<u8> {
+        if !self.tool_context.has_custom_tools {
+            return bytes.to_vec();
+        }
         append_utf8_safe(&mut self.buffer, &mut self.utf8_remainder, bytes);
         let mut output = String::new();
         while let Some(block) = take_sse_block(&mut self.buffer) {
@@ -1360,6 +1374,9 @@ impl ResponsesSseCustomToolConverter {
     }
 
     pub fn finish(&mut self) -> Vec<u8> {
+        if !self.tool_context.has_custom_tools {
+            return Vec::new();
+        }
         if !self.utf8_remainder.is_empty() {
             self.buffer
                 .push_str(&String::from_utf8_lossy(&self.utf8_remainder));
@@ -1628,6 +1645,9 @@ pub fn responses_sse_to_responses_sse_with_request(
     input: &str,
     original_request: &Value,
 ) -> String {
+    if !request_has_custom_tools(original_request) {
+        return input.to_string();
+    }
     let mut converter = ResponsesSseCustomToolConverter::with_request(original_request);
     let mut output = converter.push_bytes(input.as_bytes());
     output.extend(converter.finish());
@@ -1713,7 +1733,13 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
     }
 
     if wire_api == UpstreamWireApi::Responses {
-        let body = normalize_responses_response_for_request(upstream_body, &request_json);
+        let body = if request_has_custom_tools(&request_json) {
+            let parsed = serde_json::from_slice(&upstream_body).unwrap_or(Value::Null);
+            let normalized = normalize_responses_response_for_request(parsed, &request_json);
+            serde_json::to_vec(&normalized)?
+        } else {
+            upstream_body.to_vec()
+        };
         return Ok(ProxyHttpResponse {
             status: "200 OK".to_string(),
             content_type: if upstream_content_type.is_empty() {
@@ -1721,7 +1747,7 @@ pub async fn handle_responses_proxy_request(body: &str) -> anyhow::Result<ProxyH
             } else {
                 upstream_content_type
             },
-            body: serde_json::to_vec(&body)?,
+            body,
         });
     }
 

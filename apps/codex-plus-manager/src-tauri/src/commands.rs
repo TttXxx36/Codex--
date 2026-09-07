@@ -2425,26 +2425,45 @@ pub fn list_local_sessions(
     let home = codex_plus_core::codex_sqlite::default_codex_home_dir();
     let db_paths = codex_plus_core::codex_sqlite::codex_session_db_paths_from_home(&home);
     let mut sessions = Vec::new();
+    let mut errors = Vec::new();
+    let single_db = db_paths.len() <= 1;
     let mut session_ids = std::collections::HashSet::new();
     let mut duplicate_session_ids = std::collections::HashSet::new();
-    let mut errors = Vec::new();
-    for db_path in &db_paths {
-        let adapter = local_session_adapter(db_path);
-        match adapter.list_local_session_ids() {
-            Ok(ids) if use_keyset => {
-                for id in ids {
-                    if !session_ids.insert(id.clone()) {
-                        duplicate_session_ids.insert(id);
+    let mut total_count = 0;
+    if single_db {
+        if let Some(db_path) = db_paths.first() {
+            let adapter = local_session_adapter(db_path);
+            match adapter.count_local_sessions() {
+                Ok(count) => total_count = count,
+                Err(error) if db_path.exists() => {
+                    errors.push(format!("{}: {error}", db_path.to_string_lossy()));
+                }
+                Err(_) => {}
+            }
+        }
+    } else {
+        for db_path in &db_paths {
+            let adapter = local_session_adapter(db_path);
+            match adapter.list_local_session_ids() {
+                Ok(ids) if use_keyset => {
+                    for id in ids {
+                        if !session_ids.insert(id.clone()) {
+                            duplicate_session_ids.insert(id);
+                        }
                     }
                 }
+                Ok(ids) => session_ids.extend(ids),
+                Err(error) if db_path.exists() => {
+                    errors.push(format!("{}: {error}", db_path.to_string_lossy()));
+                    continue;
+                }
+                Err(_) => continue,
             }
-            Ok(ids) => session_ids.extend(ids),
-            Err(error) if db_path.exists() => {
-                errors.push(format!("{}: {error}", db_path.to_string_lossy()));
-                continue;
-            }
-            Err(_) => continue,
         }
+        total_count = session_ids.len();
+    }
+    for db_path in &db_paths {
+        let adapter = local_session_adapter(db_path);
         let page_result = if let Some(cursor) = cursor.as_ref() {
             adapter.list_local_sessions_keyset(
                 fetch_limit,
@@ -2481,6 +2500,9 @@ pub fn list_local_sessions(
             let session_time = session.updated_at_ms.unwrap_or(0);
             let mut superseded = false;
             for db_path in &db_paths {
+                if db_path.to_string_lossy() == session.db_path {
+                    continue;
+                }
                 let adapter = local_session_adapter(db_path);
                 match adapter.find_local_session_time(&session.id) {
                     Ok(Some(other_time)) if other_time > session_time => {
@@ -2541,7 +2563,7 @@ pub fn list_local_sessions(
         offset: response_offset,
         limit,
         has_more,
-        total_count: session_ids.len(),
+        total_count,
         next_cursor,
         prev_cursor: cursor.as_ref().map(encode_local_session_cursor),
     };

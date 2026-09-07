@@ -412,7 +412,12 @@ graph TD
   - `apps/codex-plus-manager`: `npm test` 200/200 通过；`npm run inject:check` 通过，`renderer-inject.js` 483004 bytes，SHA-256 `01e0f4f33fed22227012fd7bc55c9bfa538073e918bb6484cebf2f7d6959e612`。
   - `git diff --check` 通过；新增 diff 的 credential-like 扫描为 0，未新增 API Key、Bearer 或 Cookie fixture。
   - `npm run check` 当前环境因缺少 `tsc` 退出，`npm run vite:build` 因缺少 `vite` 退出；`cargo`、`rustc`、`rustfmt` 当前环境均不可用，因此 Rust 编译、Rust 回归测试、真实桌面/E2E 和 CI 仍未验证，不能将本地结果表述为完整通过。
-  - 架构师审查通过，已按常规提交 `feat(protocol): implement BUG-011 WeChat sandbox enum, custom tool downgrade and package hash verification` 合入并推送到 `origin/Gemini`。
+  - 架构师深度审计与运行时加固（2026-09-07）：针对 Task 25 与 Task 26 开展二次性能与异常穿透分析，修复了以下 4 项隐蔽缺陷与性能瓶颈：
+    1. `storage.rs`: 将只读库/并发锁场景下的 `ensure_session_indexes(&db)?` 改为非致命容错执行，并在 `find_local_session_time` 中移除重复索引检测，避免只读或被占用的会话数据库在查询时崩溃。
+    2. `storage.rs`: 新增轻量级 `count_local_sessions`（利用 SQLite `SELECT COUNT(*)` 和覆盖索引统计），避免翻页时将数万会话 ID 全量拉入内存。
+    3. `commands.rs`: 在单库场景下直接采用 `count_local_sessions`，彻底消除翻页 $O(N)$ 字符串堆分配；在跨库去重比对中增加自库跳过，减少无谓的重开库连接。
+    4. `protocol_proxy.rs` & `launcher.rs`: 针对上游 Responses SSE 流式和非流式协议，新增 `request_has_custom_tools` 判定。当请求中未声明 `custom` 工具时，直接进行零拷贝字节透传与原生响应透传，彻底避免逐个 SSE chunk 重新解析 JSON AST 和重新序列化的延迟损耗。
+  - 审计加固验证：`npm test` 200/200 通过；`npm run inject:check` 无漂移；`git diff --check` 通过。
 
 ---
 

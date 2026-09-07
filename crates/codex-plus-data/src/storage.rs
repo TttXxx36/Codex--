@@ -545,7 +545,7 @@ impl SQLiteStorageAdapter {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
-        ensure_session_indexes(&db)?;
+        let _ = ensure_session_indexes(&db);
         match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => {
                 self.list_codex_threads_keyset(&db, limit, cursor)
@@ -557,12 +557,31 @@ impl SQLiteStorageAdapter {
         }
     }
 
+    pub fn count_local_sessions(&self) -> anyhow::Result<usize> {
+        if !self.db_path.exists() {
+            return Ok(0);
+        }
+        let db = Connection::open(&self.db_path)?;
+        let _ = ensure_session_indexes(&db);
+        let (table, filter) = match schema_kind(&db)? {
+            Some(SchemaKind::CodexThreads) => ("threads", codex_thread_filter(&db)?),
+            Some(SchemaKind::CodexAutomationRuns) => (
+                "automation_runs",
+                "WHERE COALESCE(thread_id, '') <> ''".to_string(),
+            ),
+            _ => anyhow::bail!("Unsupported local storage schema"),
+        };
+        let sql = format!("SELECT COUNT(*) FROM {table} {filter}");
+        let count: i64 = db.query_row(&sql, [], |row| row.get(0))?;
+        Ok(usize::try_from(count.max(0)).unwrap_or(0))
+    }
+
     pub fn list_local_session_ids(&self) -> anyhow::Result<Vec<String>> {
         if !self.db_path.exists() {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
-        ensure_session_indexes(&db)?;
+        let _ = ensure_session_indexes(&db);
         let (table, id_column, filter) = match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => ("threads", "id", codex_thread_filter(&db)?),
             Some(SchemaKind::CodexAutomationRuns) => (
@@ -587,7 +606,6 @@ impl SQLiteStorageAdapter {
             return Ok(None);
         }
         let db = Connection::open(&self.db_path)?;
-        ensure_session_indexes(&db)?;
         match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => {
                 let columns = table_columns(&db, "threads")?
