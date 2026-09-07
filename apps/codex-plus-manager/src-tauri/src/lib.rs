@@ -180,6 +180,8 @@ pub fn run() {
             commands::fetch_relay_profile_models,
             commands::fetch_sub2api_billing,
             commands::switch_relay_profile,
+            commands::undo_relay_switch,
+            commands::load_relay_switch_undo,
             commands::apply_relay_injection,
             commands::apply_pure_api_injection,
             commands::clear_relay_injection,

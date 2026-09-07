@@ -141,8 +141,11 @@ import { runConcurrentSpeedMatrix, type SpeedMatrixSummary } from "./speed-matri
 import { searchLocalSessions } from "./session-search";
 import {
   computeProviderSwitchPreflight,
-  createSwitchRollbackSnapshot,
-  restoreSwitchRollback,
+  isSuccessfulCommandAction,
+  rollbackSnapshotFromSwitchResult,
+  rollbackSnapshotFromUndoResult,
+  type CommandActionResult as RelayCommandActionResult,
+  type RelaySwitchUndoData,
   type ProviderSwitchPreflight,
   type SwitchRollbackSnapshot,
 } from "./provider-switch-preflight";
@@ -550,12 +553,15 @@ type ExtractRelayCommonConfigResult = CommandResult<{
   profileConfigContents: string;
 }>;
 
-type RelaySwitchResult = CommandResult<{
+type RelaySwitchPayload = {
   settings: BackendSettings;
   settingsPath: string;
-  user_scripts: unknown;
+  userScripts: unknown;
   relay: RelayPayload;
-}>;
+};
+
+type RelaySwitchResult = RelayCommandActionResult<RelaySwitchPayload>;
+type RelaySwitchUndoResult = RelayCommandActionResult<RelaySwitchUndoData>;
 
 type SettingsBackfillResult = CommandResult<{
   settings: BackendSettings;
@@ -1164,6 +1170,20 @@ export function App() {
       return normalized;
     }
     return null;
+  };
+
+  const refreshRelaySwitchUndo = async () => {
+    const result = await run(() => call<RelaySwitchUndoResult>("load_relay_switch_undo"));
+    if (!result) return null;
+    if (!isSuccessfulCommandAction(result)) {
+      logDiagnostic("switchRelayProfile.undo_state_failed", {
+        code: result.code,
+        message: result.message,
+      });
+      return result;
+    }
+    setLastSwitchRollback(rollbackSnapshotFromUndoResult(result));
+    return result;
   };
 
   const refreshWeixinStatus = async (silent = false) => {
@@ -2754,7 +2774,6 @@ export function App() {
       showNotice(t("供应商配置可能不正确"), validationError, "failed");
       return;
     }
-    const rollbackSnapshot = createSwitchRollbackSnapshot(settingsForm, switchSettings.activeRelayId);
     switchSettings = await snapshotActiveRelayFilesBeforeSwitch(switchSettings, previousActiveRelayId);
     const selectedAfterSave = activeRelayProfile(switchSettings);
     const command = relayProfileSwitchCommand(selectedAfterSave);
@@ -2778,29 +2797,63 @@ export function App() {
         });
         return;
       }
-      const selectedSettings = normalizeSettings(result.settings);
+      if (!result.ok && result.undo_token) {
+        setLastSwitchRollback({
+          token: result.undo_token,
+          timestamp: Date.now(),
+          sourceName: sourceBeforeSnapshot.name || previousActiveRelayId,
+          targetName: selectedAfterSave.name || selectedAfterSave.id,
+        });
+      }
+      const payload = result.data;
+      if (!payload) {
+        const recovery = result.recovery ? `\n建议恢复动作：${result.recovery}` : "";
+        showNotice(
+          t("供应商切换"),
+          `${result.message || t("后端未返回可用的切换结果。")}${recovery}`,
+          result.code || "failed",
+        );
+        return;
+      }
+      const selectedSettings = normalizeSettings(payload.settings);
+      const resultStatus = result.ok ? "ok" : result.code || "failed";
+      const resultMessage = result.message || t("供应商切换未返回说明。");
       setSettings({
-        status: result.status,
-        message: result.message,
+        status: resultStatus,
+        message: resultMessage,
         settings: selectedSettings,
-        settings_path: result.settingsPath,
-        user_scripts: result.user_scripts as UserScriptInventory,
+        settings_path: payload.settingsPath,
+        user_scripts: payload.userScripts as UserScriptInventory,
       });
       setSettingsForm(selectedSettings);
       setRelay({
-        status: result.status,
-        message: result.message,
-        ...result.relay,
+        status: resultStatus,
+        message: resultMessage,
+        ...payload.relay,
       });
       await refreshRelayFiles(true);
-      if (!isSuccessStatus(result.status)) {
+      if (!result.ok) {
         logDiagnostic("switchRelayProfile.apply_failed", {
           targetRelayId: selectedAfterSave.id,
-          status: result.status,
+          code: result.code,
           message: result.message,
           activeRelayId: selectedSettings.activeRelayId,
         });
-        showNotice(t("供应商切换"), result.message, result.status);
+        const recovery = result.recovery ? `\n建议恢复动作：${result.recovery}` : "";
+        showNotice(t("供应商切换"), `${resultMessage}${recovery}`, result.code || "failed");
+        return;
+      }
+      const rollbackSnapshot = rollbackSnapshotFromSwitchResult(
+        result,
+        sourceBeforeSnapshot.name || previousActiveRelayId,
+        selectedAfterSave.name || selectedAfterSave.id,
+      );
+      if (!rollbackSnapshot) {
+        showNotice(
+          t("供应商切换"),
+          t("供应商已切换，但后端未返回可信撤销凭证；请立即检查配置文件。"),
+          "recovery_required",
+        );
         return;
       }
       setLastSwitchRollback(rollbackSnapshot);
@@ -2808,7 +2861,8 @@ export function App() {
       logDiagnostic("switchRelayProfile.ok", {
         targetRelayId: currentSelected.id,
         launchMode: selectedSettings.launchMode,
-        status: result.status,
+        status: resultStatus,
+        hasUndoToken: true,
       });
     } finally {
       setRelaySwitching(false);
@@ -2816,13 +2870,45 @@ export function App() {
   };
 
   const undoProviderSwitch = async () => {
-    if (!lastSwitchRollback) return;
-    const restored = restoreSwitchRollback(lastSwitchRollback);
-    if (!restored) return;
-    const previousName = lastSwitchRollback.sourceName;
-    setLastSwitchRollback(null);
-    await switchRelayProfile(restored, settingsForm.activeRelayId, true);
-    showNotice(t("撤销成功"), tf("已成功恢复至切换前的供应商「{0}」。", [previousName]), "ok");
+    const rollback = lastSwitchRollback;
+    if (!rollback) return;
+    const result = await run(() =>
+      call<RelaySwitchResult>("undo_relay_switch", { token: rollback.token }),
+    );
+    if (!result) return;
+    if (result.ok === true) {
+      const payload = result.data;
+      if (payload) {
+        const restoredSettings = normalizeSettings(payload.settings);
+        setSettings({
+          status: "ok",
+          message: result.message || t("撤销成功"),
+          settings: restoredSettings,
+          settings_path: payload.settingsPath,
+          user_scripts: payload.userScripts as UserScriptInventory,
+        });
+        setSettingsForm(restoredSettings);
+        setRelay({
+          status: "ok",
+          message: result.message || t("撤销成功"),
+          ...payload.relay,
+        });
+      }
+      await refreshRelayFiles(true);
+      setLastSwitchRollback(null);
+      showNotice(
+        t("撤销成功"),
+        result.message || tf("已成功恢复至切换前的供应商「{0}」。", [rollback.sourceName]),
+        "ok",
+      );
+      return;
+    }
+    const recovery = result.recovery ? `\n建议恢复动作：${result.recovery}` : "";
+    showNotice(
+      t("撤销失败"),
+      `${result.message || t("后端拒绝了撤销操作，撤销入口仍然保留。")}${recovery}`,
+      result.code || "failed",
+    );
   };
 
   const snapshotActiveRelayFilesBeforeSwitch = async (
@@ -2893,6 +2979,7 @@ export function App() {
       }
       await refreshOverview(true);
       if (!handledNavigation) await refreshSettings(true);
+      await refreshRelaySwitchUndo();
       await refreshRelay(true);
       await refreshEnvConflicts(true);
       await refreshProviderSyncTargets(true);

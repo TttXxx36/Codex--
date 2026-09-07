@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use codex_plus_core::install::SILENT_BINARY;
 use codex_plus_core::models::{DeleteResult, SessionRef};
 use codex_plus_core::relay_environment::RelayEnvironmentReport;
+use codex_plus_core::relay_switch::SwitchUndoInfo;
 use codex_plus_core::script_market::{self, MarketScript, ScriptMarketManifest};
 use codex_plus_core::settings::{
     BackendSettings, RelayProfile, RelaySessionProvider, SettingsStore,
@@ -31,6 +32,8 @@ where
     #[serde(flatten)]
     pub payload: T,
 }
+
+pub type CommandActionResult<T = ()> = codex_plus_core::relay_switch::CommandActionResult<T>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionPayload {
@@ -4187,16 +4190,19 @@ pub struct RelayProfileSwitchRequest {
 #[tauri::command]
 pub fn switch_relay_profile(
     request: RelayProfileSwitchRequest,
-) -> CommandResult<RelaySwitchPayload> {
+) -> CommandActionResult<RelaySwitchPayload> {
     let Ok(_guard) = relay_switch_mutex().lock() else {
         let status = codex_plus_core::relay_config::default_relay_status();
-        return failed(
+        return action_failed(
+            "lock_unavailable",
             "供应商切换锁已损坏，请重启管理器后再试。",
-            relay_switch_payload(
+            None,
+            Some("请重启管理器后重试；不要手动覆盖当前配置文件。".to_string()),
+            Some(relay_switch_payload(
                 SettingsStore::default().load().unwrap_or_default(),
                 status,
                 None,
-            ),
+            )),
         );
     };
     let home = codex_plus_core::relay_config::default_codex_home_dir();
@@ -4226,9 +4232,10 @@ pub fn switch_relay_profile(
                     "backupPath": result.backup_path.as_ref()
                 }),
             );
-            ok(
+            action_ok(
                 "供应商已切换。",
-                relay_switch_payload(result.settings, status, result.backup_path),
+                result.undo_token,
+                Some(relay_switch_payload(result.settings, status, result.backup_path)),
             )
         }
         Err(error) => {
@@ -4239,14 +4246,89 @@ pub fn switch_relay_profile(
                 json!({
                     "previousActiveRelayId": previous_active_relay_id,
                     "activeRelayId": settings.active_relay_id,
-                    "error": error.to_string()
+                    "code": &error.code
                 }),
             );
-            failed(
-                &format!("供应商切换失败：{error}"),
-                relay_switch_payload(settings, status, None),
+            action_failed(
+                &error.code,
+                &error.message,
+                error.undo_token,
+                error.recovery,
+                Some(relay_switch_payload(settings, status, None)),
             )
         }
+    }
+}
+
+#[tauri::command]
+pub fn undo_relay_switch(token: String) -> CommandActionResult<RelaySwitchPayload> {
+    let trimmed_token = token.trim();
+    let home = codex_plus_core::relay_config::default_codex_home_dir();
+    let store = SettingsStore::default();
+    let Ok(_guard) = relay_switch_mutex().lock() else {
+        return action_failed(
+            "lock_unavailable",
+            "供应商撤销锁已损坏，请重启管理器后再试。",
+            Some(trimmed_token.to_string()),
+            Some("请重启管理器后重试；不要手动覆盖当前配置文件。".to_string()),
+            Some(relay_switch_payload(
+                store.load().unwrap_or_default(),
+                codex_plus_core::relay_config::relay_status_from_home(&home),
+                None,
+            )),
+        );
+    };
+    if trimmed_token.is_empty() {
+        return action_failed(
+            "invalid_undo_token",
+            "撤销凭证为空，未执行恢复。",
+            None,
+            Some("请保留顶部撤销入口并重新加载管理器。".to_string()),
+            Some(relay_switch_payload(
+                store.load().unwrap_or_default(),
+                codex_plus_core::relay_config::relay_status_from_home(&home),
+                None,
+            )),
+        );
+    }
+
+    match codex_plus_core::relay_switch::restore_last_switch(trimmed_token) {
+        Ok(result) => {
+            let status = codex_plus_core::relay_config::relay_status_from_home(&home);
+            action_ok(
+                "供应商已撤销。",
+                None,
+                Some(relay_switch_payload(result.settings, status, result.backup_path)),
+            )
+        }
+        Err(error) => {
+            let status = codex_plus_core::relay_config::relay_status_from_home(&home);
+            action_failed(
+                &error.code,
+                &error.message,
+                error.undo_token.or_else(|| Some(trimmed_token.to_string())),
+                error.recovery,
+                Some(relay_switch_payload(
+                    store.load().unwrap_or_default(),
+                    status,
+                    None,
+                )),
+            )
+        }
+    }
+}
+
+#[tauri::command]
+pub fn load_relay_switch_undo() -> CommandActionResult<SwitchUndoInfo> {
+    match codex_plus_core::relay_switch::load_last_switch_undo() {
+        Ok(info) => action_ok("撤销状态已加载。", None, info),
+        Err(error) => action_failed(
+            "snapshot_corrupt",
+            &format!("读取供应商撤销状态失败：{error}"),
+            None,
+            Some("请保留当前配置文件并手动检查 switch_backups 目录。".to_string()),
+            None,
+        ),
     }
 }
 
@@ -6004,6 +6086,34 @@ fn failed<T: Serialize>(message: &str, payload: T) -> CommandResult<T> {
         status: "failed".to_string(),
         message: message.to_string(),
         payload,
+    }
+}
+
+fn action_ok<T>(message: &str, undo_token: Option<String>, data: Option<T>) -> CommandActionResult<T> {
+    CommandActionResult {
+        ok: true,
+        code: Some("ok".to_string()),
+        message: Some(message.to_string()),
+        undo_token,
+        recovery: None,
+        data,
+    }
+}
+
+fn action_failed<T>(
+    code: &str,
+    message: &str,
+    undo_token: Option<String>,
+    recovery: Option<String>,
+    data: Option<T>,
+) -> CommandActionResult<T> {
+    CommandActionResult {
+        ok: false,
+        code: Some(code.to_string()),
+        message: Some(message.to_string()),
+        undo_token,
+        recovery,
+        data,
     }
 }
 

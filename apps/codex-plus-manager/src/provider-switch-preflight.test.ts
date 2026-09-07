@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {
   maskCredential,
   computeProviderSwitchPreflight,
-  createSwitchRollbackSnapshot,
-  restoreSwitchRollback,
+  isSuccessfulCommandAction,
+  rollbackSnapshotFromSwitchResult,
+  rollbackSnapshotFromUndoResult,
 } from './provider-switch-preflight.ts';
 
 test('maskCredential protects sensitive API keys', () => {
@@ -74,23 +75,75 @@ test('computeProviderSwitchPreflight detects endpoint, model, protocol and auth 
   assert.equal(authDiff.newValue.includes('sk-target-87654321'), false);
 });
 
-test('createSwitchRollbackSnapshot and restoreSwitchRollback allow safe one-click undo', () => {
-  const initialSettings = {
-    activeRelayId: 'p1',
-    relayProfiles: [
-      { id: 'p1', name: 'Profile One', baseUrl: 'https://p1.com' },
-      { id: 'p2', name: 'Profile Two', baseUrl: 'https://p2.com' },
-    ],
-    launchMode: 'patch',
+test('provider preflight compares live-impact fields without exposing raw credentials', () => {
+  const source = {
+    id: 'p1',
+    name: 'Profile One',
+    configContents: 'base_url = "https://one.example"',
+    authContents: 'synthetic-source-secret',
+    vlmApiKey: 'synthetic-vlm-source-secret',
+    modelRoutes: [{ model: 'a', targetRelayId: 'p1' }],
+  };
+  const target = {
+    id: 'p2',
+    name: 'Profile Two',
+    configContents: 'base_url = "https://two.example"',
+    authContents: 'synthetic-target-secret',
+    vlmApiKey: 'synthetic-vlm-target-secret',
+    modelRoutes: [{ model: 'a', targetRelayId: 'p2' }],
   };
 
-  const snapshot = createSwitchRollbackSnapshot(initialSettings, 'p2');
-  assert.ok(snapshot.token.startsWith('rb-'));
-  assert.equal(snapshot.previousActiveRelayId, 'p1');
-  assert.equal(snapshot.targetActiveRelayId, 'p2');
-  assert.equal(snapshot.sourceName, 'Profile One');
-  assert.equal(snapshot.targetName, 'Profile Two');
+  const preflight = computeProviderSwitchPreflight(source, target);
+  const fields = preflight.diffs.map((diff) => diff.field);
+  assert.ok(fields.includes('configContents'));
+  assert.ok(fields.includes('authContents'));
+  assert.ok(fields.includes('vlmApiKey'));
+  assert.ok(fields.includes('modelRoutes'));
+  for (const diff of preflight.diffs.filter((item) => item.isSensitive)) {
+    assert.equal(diff.oldValue.includes('synthetic-'), false);
+    assert.equal(diff.newValue.includes('synthetic-'), false);
+  }
+});
 
-  const restored = restoreSwitchRollback(snapshot);
-  assert.deepEqual(restored, initialSettings);
+test('backend action result is the only source of a persistent undo banner', () => {
+  const switched = {
+    ok: true,
+    code: 'ok',
+    message: 'switched',
+    undo_token: '123e4567-e89b-42d3-a456-426614174000',
+    recovery: null,
+    data: null,
+  };
+  const snapshot = rollbackSnapshotFromSwitchResult(switched, 'Profile One', 'Profile Two', 123);
+  assert.deepEqual(snapshot, {
+    token: switched.undo_token,
+    timestamp: 123,
+    sourceName: 'Profile One',
+    targetName: 'Profile Two',
+  });
+  assert.equal(isSuccessfulCommandAction(switched), true);
+
+  const loaded = {
+    ok: true,
+    code: 'ok',
+    message: 'loaded',
+    undo_token: null,
+    recovery: null,
+    data: {
+      token: switched.undo_token,
+      createdAtMs: 456,
+      sourceProfileName: 'Profile One',
+      targetProfileName: 'Profile Two',
+    },
+  };
+  assert.deepEqual(rollbackSnapshotFromUndoResult(loaded), {
+    token: switched.undo_token,
+    timestamp: 456,
+    sourceName: 'Profile One',
+    targetName: 'Profile Two',
+  });
+
+  const failed = { ...switched, ok: false, code: 'restore_conflict', recovery: 'manual recovery' };
+  assert.equal(isSuccessfulCommandAction(failed), false);
+  assert.equal(rollbackSnapshotFromSwitchResult(failed, 'Profile One', 'Profile Two'), null);
 });

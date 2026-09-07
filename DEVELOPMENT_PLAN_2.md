@@ -109,10 +109,17 @@ graph TD
     - 应用重启后仍能识别持久化快照或给出清晰不可撤销说明。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  - *（待任务实施后登记具体文件修改、核心逻辑改造与提交 commit）*
+  - `crates/codex-plus-core/src/relay_switch.rs`：将供应商切换改为后端事务式流程；切换前将 `settings.json`、`config.toml`、`auth.json` 以原始字节和 SHA-256 指纹写入隔离快照目录，成功后记录切换后指纹并返回后端生成的 UUID 撤销 token；失败时尝试回滚，回滚失败映射为 `recovery_required`。
+  - `crates/codex-plus-core/src/settings.rs`：暴露 `SettingsStore::path()`，供快照/恢复流程定位真实 settings 文件。
+  - `apps/codex-plus-manager/src-tauri/src/commands.rs`、`src-tauri/src/lib.rs`：统一供应商切换/撤销/持久化撤销状态的结构化动作结果，并注册 `undo_relay_switch`、`load_relay_switch_undo`；日志仅记录错误 code，不记录错误详情中的潜在凭据。
+  - `apps/codex-plus-manager/src/App.tsx`、`src/provider-switch-preflight.ts`：移除前端 `Math.random()` 和内存 settings 快照；启动时加载后端快照，成功只接受 `ok === true` 且有可信 token 的撤销入口，失败保留 token 并展示后端错误/恢复建议，敏感 diff 仅显示掩码值。
+  - `crates/codex-plus-core/tests/relay_switch.rs`、`src/provider-switch-preflight.test.ts`：补充字节级往返、外部修改冲突拒绝、快照写入中断不变更文件、重载发现快照，以及动作结果/敏感字段契约测试。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - *（待任务验证后登记客观测试命令、通过指标与失败路径覆盖断言）*
+  - `apps/codex-plus-manager`：`npm test` 通过 **188/188**（0 failed）。
+  - `git diff --check` 通过。
+  - 静态审阅确认成功/失败/恢复冲突/人工恢复路径均由结构化 `ok`、`code`、`undo_token`、`recovery` 驱动；未运行真实桌面 E2E。
+  - `npm run check` 未完成：当前环境缺少 `tsc`；Rust 测试/编译未完成：当前环境缺少 `cargo`、`rustc`、`rustfmt`、`rust-analyzer`。因此 Rust 编译与新增 Rust 集成测试结果仍标记为 **未验证**，没有伪称为通过。
 
 ---
 

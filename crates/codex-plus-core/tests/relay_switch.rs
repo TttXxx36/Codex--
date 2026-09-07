@@ -1,8 +1,32 @@
-use codex_plus_core::relay_switch::switch_relay_profile_in_home;
+use std::path::Path;
+
+use codex_plus_core::relay_switch::{
+    load_last_switch_undo_in_dir, restore_last_switch_in_home,
+    switch_relay_profile_in_home_with_backup_dir, RelaySwitchError, RelaySwitchResult,
+};
 use codex_plus_core::settings::{
     AggregateRelayMember, AggregateRelayProfile, AggregateRelayStrategy, BackendSettings,
     LaunchMode, RelayMode, RelayProfile, RelaySessionProvider, SettingsStore,
 };
+
+fn switch_for_test(
+    store: &SettingsStore,
+    home: &Path,
+    next_settings: BackendSettings,
+    previous_active_relay_id: &str,
+) -> Result<RelaySwitchResult, RelaySwitchError> {
+    let backup_dir = home
+        .parent()
+        .expect("test Codex home has a parent")
+        .join("switch_backups");
+    switch_relay_profile_in_home_with_backup_dir(
+        store,
+        home,
+        next_settings,
+        previous_active_relay_id,
+        &backup_dir,
+    )
+}
 
 #[test]
 fn switch_rolls_back_active_settings_when_live_write_fails() {
@@ -48,7 +72,7 @@ base_url = "https://a.example/v1"
         ..BackendSettings::default()
     };
 
-    let error = switch_relay_profile_in_home(&store, &temp.path().join("codex"), next, "a")
+    let error = switch_for_test(&store, &temp.path().join("codex"), next, "a")
         .expect_err("invalid auth should fail switch");
 
     assert!(error.to_string().contains("auth.json"));
@@ -119,7 +143,7 @@ base_url = "https://b.example/v1"
         ..BackendSettings::default()
     };
 
-    let error = switch_relay_profile_in_home(&store, &home, next, "a")
+    let error = switch_for_test(&store, &home, next, "a")
         .expect_err("missing api key should fail post-write status check");
 
     assert!(
@@ -189,7 +213,7 @@ base_url = "https://edited-a.example/v1"
         ..BackendSettings::default()
     };
 
-    switch_relay_profile_in_home(&store, &home, next, "a").unwrap();
+    switch_for_test(&store, &home, next, "a").unwrap();
 
     let stored = store.load().unwrap();
     let previous = stored
@@ -259,7 +283,7 @@ fn switch_to_aggregate_relay_allows_empty_config_snapshot() {
         ..BackendSettings::default()
     };
 
-    let result = switch_relay_profile_in_home(&store, &home, next, "api").unwrap();
+    let result = switch_for_test(&store, &home, next, "api").unwrap();
     let live = std::fs::read_to_string(home.join("config.toml")).unwrap();
 
     assert!(result.configured);
@@ -318,7 +342,7 @@ goals = true
         ..BackendSettings::default()
     };
 
-    let result = switch_relay_profile_in_home(&store, &home, next, "official").unwrap();
+    let result = switch_for_test(&store, &home, next, "official").unwrap();
     let returned = result
         .settings
         .relay_profiles
@@ -366,7 +390,7 @@ fn switch_captures_safe_app_state_before_writing_provider_config() {
         ..BackendSettings::default()
     };
 
-    switch_relay_profile_in_home(&store, &home, next, "a").unwrap();
+    switch_for_test(&store, &home, next, "a").unwrap();
 
     let snapshot: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(
@@ -391,6 +415,159 @@ fn switch_captures_safe_app_state_before_writing_provider_config() {
             .get("provider-token-cache")
             .is_none()
     );
+}
+
+#[test]
+fn switch_persists_snapshot_and_restores_settings_and_live_files_byte_for_byte() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("codex");
+    let backup_dir = temp.path().join("switch_backups");
+    std::fs::create_dir(&home).unwrap();
+    let store = SettingsStore::new(temp.path().join("settings.json"));
+    let original = BackendSettings {
+        active_relay_id: "a".to_string(),
+        relay_profiles: vec![pure_profile("a", "https://a.example/v1", "fixture-secret-a")],
+        ..BackendSettings::default()
+    };
+    store.save(&original).unwrap();
+    let original_settings = std::fs::read(store.path()).unwrap();
+    let original_config = b"model_provider = \"custom\"\nbase_url = \"https://a.example/v1\"\n";
+    let original_auth = br#"{"fixture":"auth-a"}"#;
+    std::fs::write(home.join("config.toml"), original_config).unwrap();
+    std::fs::write(home.join("auth.json"), original_auth).unwrap();
+    let next = BackendSettings {
+        active_relay_id: "b".to_string(),
+        relay_profiles: vec![
+            pure_profile("a", "https://a.example/v1", "fixture-secret-a"),
+            pure_profile("b", "https://b.example/v1", "fixture-secret-b"),
+        ],
+        ..BackendSettings::default()
+    };
+
+    let result = switch_relay_profile_in_home_with_backup_dir(
+        &store,
+        &home,
+        next,
+        "a",
+        &backup_dir,
+    )
+    .unwrap();
+    let token = result.undo_token.clone().expect("successful switch has undo token");
+    assert!(uuid::Uuid::parse_str(&token).is_ok());
+    let snapshot_path = backup_dir.join(format!("{token}.json"));
+    let snapshot: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&snapshot_path).unwrap()).unwrap();
+    assert_eq!(snapshot["token"], token);
+    assert!(snapshot["created_at_ms"].as_u64().unwrap() > 0);
+    assert_eq!(snapshot["source_profile_name"], "A");
+    assert_eq!(snapshot["target_profile_name"], "B");
+    assert_eq!(snapshot["settings"]["exists"], true);
+    assert!(snapshot["settings"]["sha256"].as_str().unwrap().len() == 64);
+    assert!(snapshot["config"]["sha256"].as_str().unwrap().len() == 64);
+    assert!(snapshot["auth"]["sha256"].as_str().unwrap().len() == 64);
+    assert!(snapshot["after"]["config"]["sha256"].as_str().unwrap().len() == 64);
+
+    let loaded = load_last_switch_undo_in_dir(&backup_dir)
+        .unwrap()
+        .expect("a persisted snapshot remains discoverable after reload");
+    assert_eq!(loaded.token, token);
+    assert_eq!(loaded.source_profile_name, "A");
+    assert_eq!(loaded.target_profile_name, "B");
+
+    restore_last_switch_in_home(&store, &home, &backup_dir, &token).unwrap();
+
+    assert_eq!(std::fs::read(store.path()).unwrap(), original_settings);
+    assert_eq!(std::fs::read(home.join("config.toml")).unwrap(), original_config);
+    assert_eq!(std::fs::read(home.join("auth.json")).unwrap(), original_auth);
+    assert!(!snapshot_path.exists());
+}
+
+#[test]
+fn restore_rejects_external_file_modification_and_keeps_undo_snapshot() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("codex");
+    let backup_dir = temp.path().join("switch_backups");
+    std::fs::create_dir(&home).unwrap();
+    let store = SettingsStore::new(temp.path().join("settings.json"));
+    let original = BackendSettings {
+        active_relay_id: "a".to_string(),
+        relay_profiles: vec![pure_profile("a", "https://a.example/v1", "fixture-secret-a")],
+        ..BackendSettings::default()
+    };
+    store.save(&original).unwrap();
+    std::fs::write(home.join("config.toml"), "model_provider = \"custom\"\n").unwrap();
+    std::fs::write(home.join("auth.json"), br#"{"fixture":"auth-a"}"#).unwrap();
+    let next = BackendSettings {
+        active_relay_id: "b".to_string(),
+        relay_profiles: vec![
+            pure_profile("a", "https://a.example/v1", "fixture-secret-a"),
+            pure_profile("b", "https://b.example/v1", "fixture-secret-b"),
+        ],
+        ..BackendSettings::default()
+    };
+    let result = switch_relay_profile_in_home_with_backup_dir(
+        &store,
+        &home,
+        next,
+        "a",
+        &backup_dir,
+    )
+    .unwrap();
+    let token = result.undo_token.unwrap();
+    std::fs::write(home.join("config.toml"), "# external edit\n").unwrap();
+
+    let error = restore_last_switch_in_home(&store, &home, &backup_dir, &token)
+        .expect_err("external modification must trigger CAS conflict");
+    assert_eq!(error.code, "restore_conflict");
+    assert_eq!(error.undo_token.as_deref(), Some(token.as_str()));
+    assert!(error.message.contains("config.toml"));
+    assert_eq!(
+        std::fs::read_to_string(home.join("config.toml")).unwrap(),
+        "# external edit\n"
+    );
+    assert_eq!(store.load().unwrap().active_relay_id, "b");
+    assert!(backup_dir.join(format!("{token}.json")).exists());
+}
+
+#[test]
+fn snapshot_write_interruption_leaves_files_untouched_and_returns_structured_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("codex");
+    let blocked_backup_path = temp.path().join("backup-target");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(&blocked_backup_path, b"not a directory").unwrap();
+    let store = SettingsStore::new(temp.path().join("settings.json"));
+    let original = BackendSettings {
+        active_relay_id: "a".to_string(),
+        relay_profiles: vec![pure_profile("a", "https://a.example/v1", "fixture-secret-a")],
+        ..BackendSettings::default()
+    };
+    store.save(&original).unwrap();
+    let before_settings = std::fs::read(store.path()).unwrap();
+    std::fs::write(home.join("config.toml"), "old-config\n").unwrap();
+    std::fs::write(home.join("auth.json"), "old-auth\n").unwrap();
+    let next = BackendSettings {
+        active_relay_id: "b".to_string(),
+        relay_profiles: vec![
+            pure_profile("a", "https://a.example/v1", "fixture-secret-a"),
+            pure_profile("b", "https://b.example/v1", "fixture-secret-b"),
+        ],
+        ..BackendSettings::default()
+    };
+
+    let error = switch_relay_profile_in_home_with_backup_dir(
+        &store,
+        &home,
+        next,
+        "a",
+        &blocked_backup_path,
+    )
+    .expect_err("snapshot persistence interruption must stop before mutation");
+    assert_eq!(error.code, "snapshot_persist_failed");
+    assert!(error.undo_token.is_none());
+    assert_eq!(std::fs::read(store.path()).unwrap(), before_settings);
+    assert_eq!(std::fs::read_to_string(home.join("config.toml")).unwrap(), "old-config\n");
+    assert_eq!(std::fs::read_to_string(home.join("auth.json")).unwrap(), "old-auth\n");
 }
 
 fn pure_profile(id: &str, base_url: &str, key: &str) -> RelayProfile {
