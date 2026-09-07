@@ -381,13 +381,13 @@ graph TD
   - `apps/codex-plus-manager/src/session-search.ts`、`src/App.tsx`、`src/views/SessionsScreen.tsx`：贯通对象/不透明游标参数、下一页/上一页游标栈和 offset 兼容路径；前端解码同时接受 `u/i` 与 `updatedAtMs/id` 载荷。
   - `apps/codex-plus-manager/src/session-search.test.ts`：增加后端风格游标兼容断言；Keyset SQL 的 `EXPLAIN QUERY PLAN` 要求覆盖索引、无临时 B-Tree 和无表扫描，并保留 10,000 条合成会话 benchmark 门禁。
 
-- **✅ 实际完成的结果 (Results & Verification — pending architect review)**：
+- **✅ 实际完成的结果 (Results & Verification — Verified & Merged into Gemini@bb1b67e)**：
   - `npm test`：**200/200** 通过，0 failure；游标/SQLite 定向文件：**6/6** 通过。【T】
   - `npm run inject:check`：通过；`renderer-inject.js` 483004 bytes，SHA-256 `01e0f4f33fed22227012fd7bc55c9bfa538073e918bb6484cebf2f7d6959e612`，无注入产物漂移。【T/S】
   - `git diff --check`：通过；新增安全扫描未发现 `sk-`、Bearer、API key、Cookie 或 `auth.json` 明文 fixture。【S/T 辅助检查】
   - Node SQLite 计划/benchmark 断言通过：Keyset 条件命中 covering index，未出现 `USE TEMP B-TREE` 或全表扫描；10,000 条合成会话性能门禁通过。【T】
-  - `npm run check`、`npm run vite:build`：当前工作树未安装 `tsc`/`vite` CLI，分别退出；`cargo`、`rustc`、`rustfmt` 不在当前环境。故 TypeScript 类型检查、Vite 构建、Rust 编译/新增 Rust 测试、真实桌面 E2E、CI/架构师审查仍为**未验证**，不将静态审计写成构建通过。
-  - 保留工作树未提交、未推送，保留既有未跟踪文档/日志；等待 Antigravity/Gemini 架构审查后再决定是否合入。
+  - `npm run check`、`npm run vite:build`：当前工作树未安装 `tsc`/`vite` CLI，分别退出；`cargo`、`rustc`、`rustfmt` 不在当前环境。故 TypeScript 类型检查、Vite 构建、Rust 编译/新增 Rust 测试、真实桌面 E2E、CI 门禁仍为**本地未验证**。
+  - 架构师审查通过，已按常规提交 `feat(sqlite): implement PERF-008 multi-schema adaptive indexing and keyset cursor backend pagination` (Commit: `bb1b67e`) 合入并推送到 `origin/Gemini`。
 
 ---
 
