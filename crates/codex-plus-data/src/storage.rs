@@ -55,8 +55,16 @@ pub fn delete_local_from_paths(
         && let Some(home) = codex_home
     {
         let thread_id = normalize_codex_thread_id(&session.session_id);
-        let session_index_lines = crate::provider_sync::session_index_lines_for_thread(home, &thread_id)
-            .unwrap_or_default();
+        let session_index_lines = match crate::provider_sync::session_index_lines_for_thread(
+            home,
+            &thread_id,
+        ) {
+            Ok(lines) => lines,
+            Err(error) => {
+                result.message = format!("session_index.jsonl 读取失败，未执行删除：{error}");
+                return result;
+            }
+        };
         let backup_token = if !session_index_lines.is_empty() {
             let mut tables = Map::new();
             tables.insert(
@@ -68,13 +76,18 @@ pub fn delete_local_from_paths(
                         .collect(),
                 ),
             );
-            backup_store
-                .write_backup(
-                    &thread_id,
-                    &home.join("session_index.jsonl"),
-                    Value::Object(tables),
-                )
-                .ok()
+            match backup_store.write_backup(
+                &thread_id,
+                &home.join("session_index.jsonl"),
+                Value::Object(tables),
+            ) {
+                Ok(token) => Some(token),
+                Err(error) => {
+                    result.message =
+                        format!("session_index.jsonl 备份失败，未执行删除：{error}");
+                    return result;
+                }
+            }
         } else {
             None
         };
@@ -1041,13 +1054,26 @@ impl SQLiteStorageAdapter {
             }
         }
         if !file_errors.is_empty() {
-            let _ = self.undo(&token);
-            let message = format!(
-                "会话关联文件删除失败：{}；已自动回退数据库变更",
-                file_errors.join("; ")
-            );
+            let undo_result = self.undo(&token);
+            let (status, message) = match undo_result.status {
+                DeleteStatus::Undone => (
+                    DeleteStatus::Failed,
+                    format!(
+                        "会话关联文件删除失败：{}；已自动回退数据库变更",
+                        file_errors.join("; ")
+                    ),
+                ),
+                _ => (
+                    DeleteStatus::RecoveryRequired,
+                    format!(
+                        "recovery_required：会话关联文件删除失败：{}；自动回退失败：{}",
+                        file_errors.join("; "),
+                        undo_result.message
+                    ),
+                ),
+            };
             return Ok(DeleteResult {
-                status: DeleteStatus::Failed,
+                status,
                 session_id: thread_id,
                 message,
                 undo_token: Some(token),

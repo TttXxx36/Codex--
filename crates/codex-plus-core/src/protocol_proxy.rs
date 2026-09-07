@@ -1103,10 +1103,11 @@ fn responses_function_tool_to_responses_tool(
         .or_else(|| nested.and_then(|value| value.get("description")))
         .and_then(Value::as_str)
         .unwrap_or("");
+    let empty_parameters = json!({});
     let parameters = tool
         .get("parameters")
         .or_else(|| nested.and_then(|value| value.get("parameters")))
-        .unwrap_or(&json!({}));
+        .unwrap_or(&empty_parameters);
     let mut normalized = json!({
         "type": "function",
         "name": name,
@@ -1248,7 +1249,7 @@ fn normalize_responses_custom_history_for_gateway(body: &mut Value) {
     for item in input {
         match item.get("type").and_then(Value::as_str) {
             Some("custom_tool_call") => {
-                let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+                let name = item.get("name").and_then(Value::as_str).unwrap_or("").to_string();
                 let raw_input = item
                     .get("input")
                     .or_else(|| item.get("arguments"))

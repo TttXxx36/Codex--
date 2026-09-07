@@ -304,7 +304,7 @@ pub struct DefaultLaunchHooks {
     helper: Mutex<Option<HelperRuntime>>,
     bridge_watchdog: Mutex<Option<BridgeWatchdogRuntime>>,
     bridge_reinjector: Mutex<Option<BridgeReinjector>>,
-    bridge_websocket_url: Mutex<Option<String>>,
+    bridge_websocket_url: Arc<Mutex<Option<String>>>,
 }
 
 struct HelperRuntime {
@@ -1333,7 +1333,7 @@ impl LaunchHooks for DefaultLaunchHooks {
 }
 
 async fn handle_helper_connection(
-    mut stream: tokio::net::TcpStream,
+    stream: tokio::net::TcpStream,
     remote_addr: Option<SocketAddr>,
 ) -> anyhow::Result<()> {
     handle_helper_connection_with_control(stream, remote_addr, None).await
