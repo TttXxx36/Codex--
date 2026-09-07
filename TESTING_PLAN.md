@@ -85,3 +85,62 @@
 - `/(?i)bearer\s+[a-z0-9_\-\.]{16,}/`：阻断 Bearer Token 泄漏；
 - `/sk-[a-zA-Z0-9]{20,}/`：阻断标准 OpenAI 密钥泄漏；
 - `/(?i)(api[_-]?key|password|secret)["']?\s*[:=]\s*["'][^"']+["']/`：阻断 JSON/TOML 中敏感凭据泄漏。
+
+---
+
+## 🔄 5. 本地测试与 GitHub Actions 协同执行架构 (Inner-Loop / Outer-Loop Architecture)
+
+为了在开发迭代的高效率与跨平台全量构建的严密性之间取得平衡，测试体系采用**“双环驱动验证架构”**：
+
+```text
+  ┌────────────────────────────────────────────────────────┐
+  │  【内环 Inner Loop】本地极速门禁 (Local Fast Gate)      │
+  │   - 范围：apps/codex-plus-manager/ 纯 Node.js 测试套件 │
+  │   - 工具：npm test (tsx 驱动，零外部依赖，极速纯内存)  │
+  │   - 耗时：~500ms 极速响应，实时反馈                    │
+  │   - 职责：验证业务逻辑、状态机转换、数据脱敏、协议契约│
+  └───────────────────────────┬────────────────────────────┘
+                              │ git commit & git push
+                              ▼
+  ┌────────────────────────────────────────────────────────┐
+  │  【外环 Outer Loop】GitHub Actions 全矩阵云端权威验证   │
+  │   - 环境：Windows-2022 纯净标准镜像                    │
+  │   - 工具链：Node.js 22 LTS, Rust Stable, Cargo, NSIS   │
+  │   - 耗时：~5-8 分钟完整编译与矩阵测试                  │
+  │   - 职责：严格依赖树锁死 (npm ci)、全量 TypeScript 静态│
+  │           类型校验、Vite 生产打包、Rust 工作区测试、   │
+  │           NSIS 安装包打包与发布制品一致性校验          │
+  └────────────────────────────────────────────────────────┘
+```
+
+### 5.1 环境能力与权衡对比矩阵 (Trade-off Matrix)
+
+| 维度 | 本地测试 (Local Environment) | GitHub Actions CI (Cloud Pipeline) | 架构选型结论 |
+| :--- | :--- | :--- | :--- |
+| **执行时效** | **极快 (~0.5s)**，开发过程无缝伴随 | **较慢 (~5-8m)**，需排队并初始化 Runner | **本地作为内环第一道防线**，拦截 90% 逻辑错误 |
+| **测试范围** | 前端逻辑、状态机、契约与纯算法单元测试 | 全量前端构建 + Rust 后端多 Crates + NSIS 安装包打包 | **CI 作为外环终极防线**，覆盖完整系统产物 |
+| **环境依赖** | 仅需 Node.js，无需安装本地 Rust/Cargo/Tsc | 预装完整标准编译环境（Rust, MSVC, NSIS, Node.js） | 消除开发者“配齐所有重型编译链”的心智负担 |
+| **洁净度** | 可能受本地 `node_modules` 缓存或残留文件污染 | 每次运行均为云端全新虚拟机，绝对幂等一致 | **CI 结果作为发布就绪与合入审查的唯一权威标准** |
+
+### 5.2 标准协同工作流 (Workflow Protocol)
+
+1. **本地提交前必须通过内环门禁 (Inner-Loop Gate)**：
+   - 任何改动推送到远程仓库前，必须在本地执行：
+     ```powershell
+     cd apps/codex-plus-manager
+     npm test
+     ```
+   - 必须确保所有自动化单测（当前 187/187）**100% 通过（0 failure）**。未跑通单测严禁 Commit 或 Push。
+2. **远程推送后自动触发外环流水线 (Outer-Loop Verification)**：
+   - 推送至 `Gemini` 分支或打 `v*` Release Tag 后，GitHub Actions 自动接管：
+     - 阶段 A：`npm ci` 验证 `package-lock.json` 依赖一致性；
+     - 阶段 B：`npx tsc --noEmit` 进行 TypeScript 严格类型检查；
+     - 阶段 C：`npm run vite:build` 验证前端生产打包无 Chunk 膨胀；
+     - 阶段 D：`cargo test --workspace` 验证底层 Rust 内存安全与通信；
+     - 阶段 E：自动打包出 Windows Portable 及 Setup 安装包。
+3. **本地完整环境补充指引（可选）**：
+   - 若开发者需要完全在本地复现 CI 的全量编译与 Rust 测试，需安装以下工具：
+     - **Rust 工具链**：通过 `winget install Rustlang.Rustup` 安装并运行 `rustup default stable`；
+     - **C++ 构建工具**：Visual Studio Build Tools (包含 MSVC 与 Windows SDK)；
+     - **依赖复位**：根目录下执行 `npm install` 确保开发依赖（如 TypeScript、Vite）就绪。
+
