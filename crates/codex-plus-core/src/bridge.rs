@@ -34,6 +34,9 @@ static NEXT_MESSAGE_ID: AtomicU64 = AtomicU64::new(100);
 static NEXT_BRIDGE_GENERATION: AtomicU64 = AtomicU64::new(1);
 static CURRENT_BRIDGE_GENERATIONS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+static CURRENT_BRIDGE_SCRIPT_IDENTIFIERS:
+    std::sync::LazyLock<std::sync::Mutex<HashMap<String, Vec<String>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 #[derive(Clone)]
 struct BridgeGeneration {
@@ -156,6 +159,79 @@ pub async fn evaluate_script_with_await_promise(
     ensure_runtime_evaluate_succeeded(response)
 }
 
+pub fn build_bridge_cleanup_script(binding_name: &str) -> String {
+    let binding_name = serde_json::to_string(binding_name).unwrap_or_else(|_| "\"\"".to_string());
+    format!(
+        r#"
+(() => {{
+  const bindingName = {binding_name};
+  try {{
+    if (window.__codexSessionDeleteCallbacks) window.__codexSessionDeleteCallbacks.clear();
+    delete window.__codexSessionDeleteBridge;
+    delete window[bindingName];
+    return true;
+  }} catch (_) {{
+    return false;
+  }}
+}})()
+"#
+    )
+}
+
+pub async fn uninstall_bridge(websocket_url: &str, binding_name: &str) -> anyhow::Result<()> {
+    let socket = connect_cdp_websocket(websocket_url).await?;
+    let mut session = CdpSession::new(socket);
+    let script_identifiers = CURRENT_BRIDGE_SCRIPT_IDENTIFIERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(websocket_url)
+        .cloned()
+        .unwrap_or_default();
+    let result = async {
+        session
+            .send_command(1, "Runtime.enable", json!({}))
+            .await?;
+        session
+            .send_command(
+                2,
+                "Runtime.removeBinding",
+                json!({ "name": binding_name }),
+            )
+            .await?;
+        for identifier in &script_identifiers {
+            session
+                .send_command(
+                    next_message_id(),
+                    "Page.removeScriptToEvaluateOnNewDocument",
+                    json!({ "identifier": identifier }),
+                )
+                .await?;
+        }
+        let response = session
+            .send_command(
+                next_message_id(),
+                "Runtime.evaluate",
+                runtime_evaluate_params(&build_bridge_cleanup_script(binding_name)),
+            )
+            .await?;
+        ensure_runtime_evaluate_succeeded(response)?;
+        anyhow::Ok(())
+    }
+    .await;
+    session.close().await;
+    if result.is_ok() {
+        let mut generations = CURRENT_BRIDGE_GENERATIONS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        generations.remove(websocket_url);
+        let mut script_identifiers = CURRENT_BRIDGE_SCRIPT_IDENTIFIERS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        script_identifiers.remove(websocket_url);
+    }
+    result
+}
+
 pub fn capture_screenshot_params() -> Value {
     json!({
         "format": "png",
@@ -268,13 +344,21 @@ pub async fn install_bridge(
         .await?;
 
     let bridge_script = build_bridge_script(binding_name);
-    session
+    let mut script_identifiers = Vec::new();
+    let bridge_script_response = session
         .send_command(
             4,
             "Page.addScriptToEvaluateOnNewDocument",
             json!({ "source": bridge_script }),
         )
         .await?;
+    if let Some(identifier) = bridge_script_response
+        .get("result")
+        .and_then(|result| result.get("identifier"))
+        .and_then(Value::as_str)
+    {
+        script_identifiers.push(identifier.to_string());
+    }
     session
         .send_command(
             5,
@@ -285,13 +369,20 @@ pub async fn install_bridge(
 
     for script in new_document_scripts {
         let message_id = next_message_id();
-        session
+        let script_response = session
             .send_command(
                 message_id,
                 "Page.addScriptToEvaluateOnNewDocument",
                 json!({ "source": script }),
             )
             .await?;
+        if let Some(identifier) = script_response
+            .get("result")
+            .and_then(|result| result.get("identifier"))
+            .and_then(Value::as_str)
+        {
+            script_identifiers.push(identifier.to_string());
+        }
         let message_id = next_message_id();
         session
             .send_command(
@@ -301,7 +392,6 @@ pub async fn install_bridge(
             )
             .await?;
     }
-
     if !publish_bridge_generation(&generation) {
         let _ = crate::diagnostic_log::append_diagnostic_log(
             "bridge.generation_superseded_before_publish",
@@ -310,6 +400,10 @@ pub async fn install_bridge(
         session.close().await;
         return Ok(());
     }
+    CURRENT_BRIDGE_SCRIPT_IDENTIFIERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(websocket_url.to_string(), script_identifiers);
     let _ = crate::diagnostic_log::append_diagnostic_log(
         "bridge.generation_published",
         json!({ "generation": generation.id }),

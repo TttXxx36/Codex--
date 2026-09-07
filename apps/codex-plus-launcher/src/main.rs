@@ -77,7 +77,11 @@ async fn launcher_main(args: Vec<String>, helper_only: bool, options: LaunchOpti
     if helper_only {
         let hooks = LauncherHooks::default();
         hooks.start_helper(options.helper_port).await?;
-        std::future::pending::<()>().await;
+        let signal = wait_for_shutdown_signal().await;
+        let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+            "launcher.shutdown_signal_received",
+            json!({ "signal": signal }),
+        );
         hooks.shutdown_helper(options.helper_port).await;
         return Ok(());
     }
@@ -100,8 +104,98 @@ async fn launcher_main(args: Vec<String>, helper_only: bool, options: LaunchOpti
     });
     let hooks = LauncherHooks::default();
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
-    handle.wait_for_codex_exit().await?;
-    Ok(())
+    tokio::select! {
+        result = handle.wait_for_codex_exit() => result,
+        signal = wait_for_shutdown_signal() => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "launcher.shutdown_signal_received",
+                json!({ "signal": signal }),
+            );
+            handle.graceful_shutdown().await;
+            Ok(())
+        }
+    }
+}
+
+async fn wait_for_shutdown_signal() -> &'static str {
+    #[cfg(unix)]
+    {
+        tokio::select! {
+            _ = wait_for_ctrl_c() => "ctrl_c",
+            _ = wait_for_sigterm() => "sigterm",
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        tokio::select! {
+            _ = wait_for_ctrl_c() => "ctrl_c",
+            _ = wait_for_ctrl_break() => "ctrl_break",
+            _ = wait_for_ctrl_close() => "ctrl_close",
+            _ = wait_for_ctrl_logoff() => "ctrl_logoff",
+            _ = wait_for_ctrl_shutdown() => "ctrl_shutdown",
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        wait_for_ctrl_c().await;
+        "ctrl_c"
+    }
+}
+
+async fn wait_for_ctrl_c() {
+    let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(unix)]
+async fn wait_for_sigterm() {
+    match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        Ok(mut signal) => {
+            let _ = signal.recv().await;
+        }
+        Err(_) => std::future::pending::<()>().await,
+    }
+}
+
+#[cfg(windows)]
+async fn wait_for_ctrl_break() {
+    match tokio::signal::windows::ctrl_break() {
+        Ok(mut signal) => {
+            let _ = signal.recv().await;
+        }
+        Err(_) => std::future::pending::<()>().await,
+    }
+}
+
+#[cfg(windows)]
+async fn wait_for_ctrl_close() {
+    match tokio::signal::windows::ctrl_close() {
+        Ok(mut signal) => {
+            let _ = signal.recv().await;
+        }
+        Err(_) => std::future::pending::<()>().await,
+    }
+}
+
+#[cfg(windows)]
+async fn wait_for_ctrl_logoff() {
+    match tokio::signal::windows::ctrl_logoff() {
+        Ok(mut signal) => {
+            let _ = signal.recv().await;
+        }
+        Err(_) => std::future::pending::<()>().await,
+    }
+}
+
+#[cfg(windows)]
+async fn wait_for_ctrl_shutdown() {
+    match tokio::signal::windows::ctrl_shutdown() {
+        Ok(mut signal) => {
+            let _ = signal.recv().await;
+        }
+        Err(_) => std::future::pending::<()>().await,
+    }
 }
 
 fn current_timestamp_ms() -> u64 {
@@ -185,16 +279,13 @@ fn log_launcher_guard_fallback(fallback_lock_path: &Path) {
 }
 
 fn should_recover_stale_launcher(debug_port: u16) -> bool {
-    let has_codex_process = !codex_plus_core::watcher::find_codex_processes().is_empty();
-    let cdp_listening = codex_plus_core::watcher::cdp_listening(debug_port);
-    let recover =
-        codex_plus_core::watcher::should_recover_stale_launcher(has_codex_process, cdp_listening);
+    let runtime_state = codex_plus_core::watcher::observe_codex_runtime(debug_port);
+    let recover = codex_plus_core::watcher::should_recover_stale_launcher_state(runtime_state);
     let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
         "launcher.stale_recovery_check",
         json!({
             "debug_port": debug_port,
-            "has_codex_process": has_codex_process,
-            "cdp_listening": cdp_listening,
+            "runtime_state": runtime_state.as_str(),
             "recover": recover
         }),
     );
@@ -588,6 +679,10 @@ impl LaunchHooks for LauncherHooks {
 
     async fn write_status(&self, status: &str) {
         self.core.write_status(status).await;
+    }
+
+    async fn shutdown_bridge(&self, debug_port: u16) {
+        self.core.shutdown_bridge(debug_port).await;
     }
 
     async fn wait_for_codex_exit(

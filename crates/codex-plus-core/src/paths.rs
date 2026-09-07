@@ -32,6 +32,10 @@ pub fn default_latest_status_path() -> PathBuf {
     default_app_state_dir().join(LATEST_STATUS_FILE)
 }
 
+pub fn default_helper_runtime_path(helper_port: u16) -> PathBuf {
+    default_app_state_dir().join(format!("helper-runtime-{helper_port}.json"))
+}
+
 pub fn default_diagnostic_log_path() -> PathBuf {
     default_app_state_dir().join(DIAGNOSTIC_LOG_FILE)
 }

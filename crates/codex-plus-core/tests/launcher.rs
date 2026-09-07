@@ -21,6 +21,7 @@ use codex_plus_core::launcher::{WindowsProcessControlStrategy, windows_process_c
 use codex_plus_core::ports::{
     select_packaged_codex_debug_port_with, select_platform_loopback_port_with,
 };
+use codex_plus_core::paths::default_helper_runtime_path;
 use codex_plus_core::settings::{
     BackendSettings, RelayMode, RelayModelRoute, RelayProfile, RelayProtocol,
 };
@@ -874,6 +875,42 @@ async fn default_helper_serves_backend_status_over_http() {
     assert!(!repair_response.status().is_success());
 
     hooks.shutdown_helper(port).await;
+}
+
+#[tokio::test]
+async fn default_helper_shutdown_authenticates_and_releases_dynamic_port() {
+    let hooks = DefaultLaunchHooks::default();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let runtime_path = default_helper_runtime_path(port);
+
+    hooks.start_helper(port).await.unwrap();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let url = format!("http://127.0.0.1:{port}/helper/shutdown");
+
+    let options = client.request(reqwest::Method::OPTIONS, &url).send().await.unwrap();
+    assert_eq!(options.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
+
+    let missing_token = client.post(&url).send().await.unwrap();
+    assert_eq!(missing_token.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&runtime_path).unwrap()).unwrap();
+    let shutdown_token = metadata["shutdown_token"].as_str().unwrap();
+    let shutdown = client
+        .post(&url)
+        .bearer_auth(shutdown_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(shutdown.status(), reqwest::StatusCode::OK);
+
+    hooks.shutdown_helper(port).await;
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .is_err());
+    assert!(!runtime_path.exists());
 }
 
 #[tokio::test]

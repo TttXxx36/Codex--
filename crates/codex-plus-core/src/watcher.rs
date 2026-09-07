@@ -67,6 +67,49 @@ pub fn cdp_listening(port: u16) -> bool {
     .any(|addr| TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexRuntimeState {
+    Absent,
+    Starting,
+    Ready,
+    CdpOnly,
+}
+
+impl CodexRuntimeState {
+    pub fn is_active(self) -> bool {
+        !matches!(self, Self::Absent)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Absent => "absent",
+            Self::Starting => "starting",
+            Self::Ready => "ready",
+            Self::CdpOnly => "cdp_only",
+        }
+    }
+}
+
+pub fn codex_runtime_state(has_codex_process: bool, cdp_available: bool) -> CodexRuntimeState {
+    match (has_codex_process, cdp_available) {
+        (false, false) => CodexRuntimeState::Absent,
+        (true, false) => CodexRuntimeState::Starting,
+        (true, true) => CodexRuntimeState::Ready,
+        (false, true) => CodexRuntimeState::CdpOnly,
+    }
+}
+
+pub fn observe_codex_runtime(debug_port: u16) -> CodexRuntimeState {
+    codex_runtime_state(
+        !find_codex_processes().is_empty(),
+        crate::cdp::endpoint_available(debug_port),
+    )
+}
+
+pub fn should_recover_stale_launcher_state(state: CodexRuntimeState) -> bool {
+    matches!(state, CodexRuntimeState::Absent)
+}
+
 pub fn build_spawn_launcher_command(launcher_path: &str, debug_port: u16) -> Vec<String> {
     vec![
         launcher_path.to_string(),
@@ -139,7 +182,7 @@ pub fn filter_killable_launcher_processes<'a>(
 }
 
 pub fn should_recover_stale_launcher(has_codex_process: bool, cdp_listening: bool) -> bool {
-    !has_codex_process && !cdp_listening
+    should_recover_stale_launcher_state(codex_runtime_state(has_codex_process, cdp_listening))
 }
 
 pub fn process_ids_still_running(

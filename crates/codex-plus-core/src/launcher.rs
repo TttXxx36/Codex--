@@ -11,19 +11,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::settings::{BackendSettings, SettingsStore, normalize_codex_extra_args};
 use crate::status::{LaunchStatus, StatusStore};
 
 static PET_OVERLAY_SYNC_FAILED: AtomicBool = AtomicBool::new(false);
 static PET_CURSOR_DRIVER_FAILED: AtomicBool = AtomicBool::new(false);
-static HELPER_GRACEFUL_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+pub const GRACEFUL_SHUTDOWN_TIMEOUT_MS: u64 = 2_000;
 const MACOS_DEBUG_TAKEOVER_WAIT_MS: u64 = 5_000;
 const MACOS_DEBUG_TAKEOVER_INTERVAL_MS: u64 = 100;
+const HELPER_SHUTDOWN_REQUEST_TIMEOUT_MS: u64 = 250;
+const BRIDGE_CLEANUP_TIMEOUT_MS: u64 = 400;
+const BRIDGE_WATCHDOG_SHUTDOWN_TIMEOUT_MS: u64 = 250;
+const HELPER_TASK_SHUTDOWN_TIMEOUT_MS: u64 = 1_200;
 
 /// 协议代理的端口写死在 `config.toml` 的 `base_url = "http://127.0.0.1:57321/v1"` 里，
 /// 不能像普通 helper 端口那样临时换一个空闲的，否则 Codex CLI 会连到没人监听的地址。
@@ -120,6 +126,7 @@ pub struct LaunchHandle {
     pub status_store: StatusStore,
     helper_started: bool,
     hooks: Arc<dyn LaunchHooks>,
+    shutdown_started: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for LaunchHandle {
@@ -141,10 +148,50 @@ impl LaunchHandle {
             .hooks
             .wait_for_codex_exit(&self.launch, self.debug_port)
             .await;
+        if !self.shutdown_started.swap(true, Ordering::SeqCst) {
+            self.cleanup_runtime().await;
+        }
+        result
+    }
+
+    pub async fn graceful_shutdown(&self) {
+        if self.shutdown_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let cleanup = self.cleanup_runtime_with_codex_termination();
+        if tokio::time::timeout(
+            std::time::Duration::from_millis(GRACEFUL_SHUTDOWN_TIMEOUT_MS),
+            cleanup,
+        )
+        .await
+        .is_err()
+        {
+            let _ = crate::diagnostic_log::append_diagnostic_log(
+                "launcher.graceful_shutdown_timeout",
+                serde_json::json!({
+                    "debug_port": self.debug_port,
+                    "helper_port": self.helper_port,
+                    "timeout_ms": GRACEFUL_SHUTDOWN_TIMEOUT_MS
+                }),
+            );
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                self.hooks.terminate_codex(&self.launch),
+            )
+            .await;
+        }
+    }
+
+    async fn cleanup_runtime(&self) {
+        self.hooks.shutdown_bridge(self.debug_port).await;
         if self.helper_started {
             self.hooks.shutdown_helper(self.helper_port).await;
         }
-        result
+    }
+
+    async fn cleanup_runtime_with_codex_termination(&self) {
+        self.cleanup_runtime().await;
+        self.hooks.terminate_codex(&self.launch).await;
     }
 }
 
@@ -241,6 +288,7 @@ pub trait LaunchHooks: Send + Sync {
         Ok(())
     }
     async fn write_status(&self, status: &str);
+    async fn shutdown_bridge(&self, _debug_port: u16) {}
     async fn wait_for_codex_exit(
         &self,
         launch: &CodexLaunch,
@@ -256,11 +304,26 @@ pub struct DefaultLaunchHooks {
     helper: Mutex<Option<HelperRuntime>>,
     bridge_watchdog: Mutex<Option<BridgeWatchdogRuntime>>,
     bridge_reinjector: Mutex<Option<BridgeReinjector>>,
+    bridge_websocket_url: Mutex<Option<String>>,
 }
 
 struct HelperRuntime {
     shutdown: tokio::sync::oneshot::Sender<()>,
     task: tokio::task::JoinHandle<()>,
+    control: HelperControl,
+}
+
+#[derive(Clone)]
+struct HelperControl {
+    shutdown_token: String,
+    shutdown_requested: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct HelperRuntimeMetadata {
+    process_id: u32,
+    helper_port: u16,
+    shutdown_token: String,
 }
 
 struct BridgeWatchdogRuntime {
@@ -285,6 +348,7 @@ pub fn error_is_address_in_use(error: &anyhow::Error) -> bool {
 /// 端口被占用时向可能残留的前任进程发送优雅停机请求，并按动态退避重试启动 helper，直到成功或超过 `timeout_ms`。
 async fn start_helper_waiting_for_busy_port<F, Fut>(
     mut start: F,
+    helper_port: u16,
     timeout_ms: u64,
     interval_ms: u64,
 ) -> anyhow::Result<()>
@@ -316,23 +380,51 @@ where
             return Err(error);
         }
         if attempts == 1 {
-            let bind_host = helper_bind_host();
-            tokio::spawn(async move {
-                let client = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_millis(600))
-                    .build();
-                if let Ok(client) = client {
-                    let _ = client
-                        .post(format!("http://{bind_host}:57321/helper/shutdown"))
-                        .send()
-                        .await;
-                }
-            });
+            request_persisted_helper_shutdown(helper_port).await;
         }
         tokio::time::sleep(std::time::Duration::from_millis(current_interval)).await;
         waited_ms += current_interval;
         current_interval = (current_interval * 3 / 2).min(500);
     }
+}
+
+async fn request_persisted_helper_shutdown(helper_port: u16) {
+    let path = crate::paths::default_helper_runtime_path(helper_port);
+    let Ok(contents) = std::fs::read(&path) else {
+        return;
+    };
+    let Ok(metadata) = serde_json::from_slice::<HelperRuntimeMetadata>(&contents) else {
+        return;
+    };
+    if metadata.helper_port != helper_port {
+        return;
+    }
+    let _ = request_helper_shutdown(helper_port, &metadata.shutdown_token).await;
+}
+
+async fn request_helper_shutdown(helper_port: u16, shutdown_token: &str) -> bool {
+    let host = helper_connect_host();
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host
+    };
+    let url = format!("http://{host}:{helper_port}/helper/shutdown");
+    let Ok(client) = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(
+            HELPER_SHUTDOWN_REQUEST_TIMEOUT_MS,
+        ))
+        .build()
+    else {
+        return false;
+    };
+    client
+        .post(url)
+        .header("authorization", format!("Bearer {shutdown_token}"))
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
 }
 
 fn helper_bind_retry_timeout_ms(protocol_proxy_enabled: bool, is_macos: bool) -> u64 {
@@ -427,6 +519,7 @@ where
                 helper_bind_retry_timeout_ms(protocol_proxy_enabled, cfg!(target_os = "macos"));
             start_helper_waiting_for_busy_port(
                 || hooks.start_helper(helper_port),
+                helper_port,
                 bind_retry_timeout_ms,
                 HELPER_BIND_RETRY_INTERVAL_MS,
             )
@@ -506,6 +599,7 @@ where
             status_store: status_store.clone(),
             helper_started,
             hooks: Arc::clone(&hooks),
+            shutdown_started: Arc::new(AtomicBool::new(false)),
         })
     }
     .await;
@@ -633,6 +727,55 @@ fn helper_bind_host() -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "127.0.0.1".to_string())
+}
+
+fn helper_connect_host() -> String {
+    let bind_host = helper_bind_host();
+    if bind_host == "::" || bind_host == "0.0.0.0" {
+        if bind_host.contains(':') {
+            "::1".to_string()
+        } else {
+            "127.0.0.1".to_string()
+        }
+    } else {
+        bind_host
+    }
+}
+
+fn persist_helper_runtime_metadata(helper_port: u16, shutdown_token: &str) {
+    let metadata = HelperRuntimeMetadata {
+        process_id: std::process::id(),
+        helper_port,
+        shutdown_token: shutdown_token.to_string(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&metadata) else {
+        return;
+    };
+    if let Err(error) = crate::settings::atomic_write(
+        &crate::paths::default_helper_runtime_path(helper_port),
+        &bytes,
+    ) {
+        let _ = crate::diagnostic_log::append_diagnostic_log(
+            "helper.runtime_metadata_write_failed",
+            serde_json::json!({
+                "helper_port": helper_port,
+                "message": error.to_string()
+            }),
+        );
+    }
+}
+
+fn clear_helper_runtime_metadata(helper_port: u16, shutdown_token: &str) {
+    let path = crate::paths::default_helper_runtime_path(helper_port);
+    let Ok(contents) = std::fs::read(&path) else {
+        return;
+    };
+    let Ok(metadata) = serde_json::from_slice::<HelperRuntimeMetadata>(&contents) else {
+        return;
+    };
+    if metadata.shutdown_token == shutdown_token {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 #[async_trait(?Send)]
@@ -778,7 +921,6 @@ impl LaunchHooks for DefaultLaunchHooks {
     }
 
     async fn start_helper(&self, helper_port: u16) -> anyhow::Result<()> {
-        HELPER_GRACEFUL_SHUTDOWN.store(false, Ordering::Relaxed);
         let bind_host = helper_bind_host();
         let socket_addr: SocketAddr = format!("{bind_host}:{helper_port}").parse().with_context(|| {
             format!("invalid helper bind socket address {bind_host}:{helper_port}")
@@ -803,12 +945,18 @@ impl LaunchHooks for DefaultLaunchHooks {
                 "address": format!("http://{bind_host}:{helper_port}")
             }),
         );
+        let control = HelperControl {
+            shutdown_token: Uuid::new_v4().to_string(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+        };
+        persist_helper_runtime_metadata(helper_port, &control.shutdown_token);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+        let task_control = control.clone();
         let task = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = &mut shutdown_rx => break,
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(200)), if HELPER_GRACEFUL_SHUTDOWN.load(Ordering::Relaxed) => {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(50)), if task_control.shutdown_requested.load(Ordering::Acquire) => {
                         let _ = crate::diagnostic_log::append_diagnostic_log(
                             "helper.graceful_shutdown_triggered",
                             serde_json::json!({ "helper_port": helper_port }),
@@ -817,8 +965,14 @@ impl LaunchHooks for DefaultLaunchHooks {
                     }
                     accepted = listener.accept() => {
                         if let Ok((stream, addr)) = accepted {
+                            let control = task_control.clone();
                             tokio::spawn(async move {
-                                let _ = handle_helper_connection(stream, Some(addr)).await;
+                                let _ = handle_helper_connection_with_control(
+                                    stream,
+                                    Some(addr),
+                                    Some(control),
+                                )
+                                .await;
                             });
                         }
                     }
@@ -828,6 +982,7 @@ impl LaunchHooks for DefaultLaunchHooks {
         *self.helper.lock().await = Some(HelperRuntime {
             shutdown: shutdown_tx,
             task,
+            control,
         });
         Ok(())
     }
@@ -970,7 +1125,12 @@ impl LaunchHooks for DefaultLaunchHooks {
     }
 
     async fn inject(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
-        retry_injection(debug_port, helper_port).await
+        retry_injection_with_target(
+            debug_port,
+            helper_port,
+            Some(self.bridge_websocket_url.clone()),
+        )
+        .await
     }
     async fn start_bridge_watchdog(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
         let bridge_reinjector = self.bridge_reinjector.lock().await.clone();
@@ -1029,6 +1189,30 @@ impl LaunchHooks for DefaultLaunchHooks {
 
     async fn write_status(&self, _status: &str) {}
 
+    async fn shutdown_bridge(&self, _debug_port: u16) {
+        let websocket_url = self.bridge_websocket_url.lock().await.take();
+        let Some(websocket_url) = websocket_url else {
+            return;
+        };
+        if let Err(error) = tokio::time::timeout(
+            std::time::Duration::from_millis(BRIDGE_CLEANUP_TIMEOUT_MS),
+            crate::bridge::uninstall_bridge(
+                &websocket_url,
+                crate::bridge::BRIDGE_BINDING_NAME,
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| Err(anyhow::anyhow!("CDP bridge cleanup timed out")))
+        {
+            let _ = crate::diagnostic_log::append_diagnostic_log(
+                "bridge.cleanup_failed",
+                serde_json::json!({
+                    "message": error.to_string()
+                }),
+            );
+        }
+    }
+
     async fn wait_for_codex_exit(
         &self,
         launch: &CodexLaunch,
@@ -1056,10 +1240,8 @@ impl LaunchHooks for DefaultLaunchHooks {
         }
         let mut empty_streak = 0u32;
         loop {
-            let has_codex_process = !crate::watcher::find_codex_processes().is_empty();
-            let cdp_available = should_probe_launcher_cdp(cfg!(windows), has_codex_process)
-                && crate::cdp::endpoint_available(debug_port);
-            if !launcher_target_alive(has_codex_process, cdp_available) {
+            let runtime_state = crate::watcher::observe_codex_runtime(debug_port);
+            if !runtime_state.is_active() {
                 empty_streak = empty_streak.saturating_add(1);
                 if empty_streak >= 3 {
                     break;
@@ -1072,14 +1254,43 @@ impl LaunchHooks for DefaultLaunchHooks {
         Ok(())
     }
 
-    async fn shutdown_helper(&self, _helper_port: u16) {
+    async fn shutdown_helper(&self, helper_port: u16) {
         if let Some(runtime) = self.bridge_watchdog.lock().await.take() {
             let _ = runtime.shutdown.send(());
-            let _ = runtime.task.await;
+            let mut task = runtime.task;
+            if tokio::time::timeout(
+                std::time::Duration::from_millis(BRIDGE_WATCHDOG_SHUTDOWN_TIMEOUT_MS),
+                &mut task,
+            )
+            .await
+            .is_err()
+            {
+                task.abort();
+                let _ = task.await;
+            }
         }
         if let Some(runtime) = self.helper.lock().await.take() {
+            let shutdown_token = runtime.control.shutdown_token.clone();
             let _ = runtime.shutdown.send(());
-            let _ = runtime.task.await;
+            let mut task = runtime.task;
+            if tokio::time::timeout(
+                std::time::Duration::from_millis(HELPER_TASK_SHUTDOWN_TIMEOUT_MS),
+                &mut task,
+            )
+            .await
+            .is_err()
+            {
+                task.abort();
+                let _ = task.await;
+                let _ = crate::diagnostic_log::append_diagnostic_log(
+                    "helper.graceful_shutdown_timeout",
+                    serde_json::json!({
+                        "helper_port": helper_port,
+                        "timeout_ms": HELPER_TASK_SHUTDOWN_TIMEOUT_MS
+                    }),
+                );
+            }
+            clear_helper_runtime_metadata(helper_port, &shutdown_token);
         }
     }
 
@@ -1121,6 +1332,14 @@ impl LaunchHooks for DefaultLaunchHooks {
 async fn handle_helper_connection(
     mut stream: tokio::net::TcpStream,
     remote_addr: Option<SocketAddr>,
+) -> anyhow::Result<()> {
+    handle_helper_connection_with_control(stream, remote_addr, None).await
+}
+
+async fn handle_helper_connection_with_control(
+    mut stream: tokio::net::TcpStream,
+    remote_addr: Option<SocketAddr>,
+    helper_control: Option<HelperControl>,
 ) -> anyhow::Result<()> {
     let request = match read_http_request(&mut stream).await {
         Ok(request) => request,
@@ -1323,11 +1542,19 @@ async fn handle_helper_connection(
         } else {
             dream_skin_image_response()
         }
-    } else if (path == "/helper/shutdown" || path == "/shutdown")
-        && matches!(method, "POST" | "OPTIONS")
-    {
+    } else if path == "/helper/shutdown" || path == "/shutdown" {
         let is_loopback = remote_addr.map_or(false, |addr| addr.ip().is_loopback());
-        if !is_loopback {
+        if method != "POST" {
+            (
+                "405 Method Not Allowed".to_string(),
+                serde_json::to_vec(&serde_json::json!({
+                    "status": "failed",
+                    "message": "停机接口只接受带鉴权的 POST 请求"
+                }))?,
+                "application/json; charset=utf-8".to_string(),
+                "helper.shutdown_method_rejected",
+            )
+        } else if !is_loopback {
             (
                 "403 Forbidden".to_string(),
                 serde_json::to_vec(&serde_json::json!({
@@ -1337,8 +1564,25 @@ async fn handle_helper_connection(
                 "application/json; charset=utf-8".to_string(),
                 "helper.shutdown_forbidden",
             )
+        } else if !helper_control.as_ref().is_some_and(|control| {
+            header_value_from_headers(&request_headers, "authorization")
+                .as_deref()
+                .and_then(|value| value.strip_prefix("Bearer "))
+                .is_some_and(|token| tokens_equal(token, &control.shutdown_token))
+        }) {
+            (
+                "401 Unauthorized".to_string(),
+                serde_json::to_vec(&serde_json::json!({
+                    "status": "unauthorized",
+                    "message": "停机凭证无效"
+                }))?,
+                "application/json; charset=utf-8".to_string(),
+                "helper.shutdown_unauthorized",
+            )
         } else {
-            HELPER_GRACEFUL_SHUTDOWN.store(true, Ordering::Relaxed);
+            if let Some(control) = helper_control.as_ref() {
+                control.shutdown_requested.store(true, Ordering::Release);
+            }
             (
                 "200 OK".to_string(),
                 serde_json::to_vec(&serde_json::json!({
@@ -1369,7 +1613,8 @@ async fn handle_helper_connection(
             "remote_addr": remote_addr_text
         }),
     );
-    let response = if method == "OPTIONS" {
+    let shutdown_path = path == "/helper/shutdown" || path == "/shutdown";
+    let response = if method == "OPTIONS" && !shutdown_path {
         format!(
             "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         )
@@ -1380,7 +1625,7 @@ async fn handle_helper_connection(
         )
     };
     stream.write_all(response.as_bytes()).await?;
-    if method != "OPTIONS" {
+    if method != "OPTIONS" || shutdown_path {
         stream.write_all(&body).await?;
     }
     stream.shutdown().await?;
@@ -2336,6 +2581,14 @@ fn header_value_from_headers(headers: &str, header_name: &str) -> Option<String>
         .filter(|value| !value.is_empty())
 }
 
+fn tokens_equal(actual: &str, expected: &str) -> bool {
+    let mut difference = actual.len() ^ expected.len();
+    for (left, right) in actual.bytes().zip(expected.bytes()) {
+        difference |= usize::from(left ^ right);
+    }
+    difference == 0
+}
+
 fn sanitize_diagnostic_event(event: &str) -> String {
     let sanitized = event
         .chars()
@@ -2471,9 +2724,23 @@ pub fn build_packaged_activation_with_native_menu_inspector(
 }
 
 async fn retry_injection(debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+    retry_injection_with_target(debug_port, helper_port, None).await
+}
+
+async fn retry_injection_with_target(
+    debug_port: u16,
+    helper_port: u16,
+    bridge_websocket_url: Option<Arc<Mutex<Option<String>>>>,
+) -> anyhow::Result<()> {
     let mut last_error = None;
     for _ in 0..20 {
-        match try_inject(debug_port, helper_port).await {
+        match try_inject_with_target(
+            debug_port,
+            helper_port,
+            bridge_websocket_url.clone(),
+        )
+        .await
+        {
             Ok(()) => return Ok(()),
             Err(error) => {
                 last_error = Some(error);
@@ -2482,6 +2749,40 @@ async fn retry_injection(debug_port: u16, helper_port: u16) -> anyhow::Result<()
         }
     }
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Codex injection failed")))
+}
+
+async fn try_inject_with_target(
+    debug_port: u16,
+    helper_port: u16,
+    bridge_websocket_url: Option<Arc<Mutex<Option<String>>>>,
+) -> anyhow::Result<()> {
+    let targets = crate::cdp::list_targets(debug_port).await?;
+    let target = crate::cdp::pick_injectable_codex_page_target(&targets)?;
+    let websocket_url = target
+        .web_socket_debugger_url
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("selected CDP target has no websocket URL"))?;
+    if let Some(bridge_websocket_url) = bridge_websocket_url {
+        *bridge_websocket_url.lock().await = Some(websocket_url.to_string());
+    }
+    let settings = SettingsStore::default().load().unwrap_or_default();
+    let script = crate::assets::injection_script_with_settings(helper_port, &settings);
+    let ctx = crate::routes::BridgeContext::core(Arc::new(crate::routes::CoreRuntimeService::new(
+        debug_port,
+        StatusStore::default(),
+    )));
+    crate::bridge::install_bridge(
+        websocket_url,
+        crate::bridge::BRIDGE_BINDING_NAME,
+        Arc::new(move |path, payload| {
+            let ctx = ctx.clone();
+            Box::pin(
+                async move { Ok(crate::routes::handle_bridge_request(ctx, &path, payload).await) },
+            )
+        }),
+        &[script],
+    )
+    .await
 }
 
 pub async fn check_and_reinject_bridge(debug_port: u16, helper_port: u16) -> bool {
@@ -2493,11 +2794,7 @@ pub fn browser_identity_changed(previous: Option<&str>, current: &str) -> bool {
 }
 
 fn launcher_target_alive(has_codex_process: bool, cdp_available: bool) -> bool {
-    has_codex_process || cdp_available
-}
-
-fn should_probe_launcher_cdp(is_windows: bool, has_codex_process: bool) -> bool {
-    is_windows && !has_codex_process
+    crate::watcher::codex_runtime_state(has_codex_process, cdp_available).is_active()
 }
 
 async fn check_and_reinject_bridge_inner(
@@ -2597,33 +2894,6 @@ fn runtime_evaluate_result_is_true(result: &Value) -> bool {
         .and_then(|result| result.get("value"))
         .and_then(Value::as_bool)
         .unwrap_or(false)
-}
-
-async fn try_inject(debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
-    let targets = crate::cdp::list_targets(debug_port).await?;
-    let target = crate::cdp::pick_injectable_codex_page_target(&targets)?;
-    let websocket_url = target
-        .web_socket_debugger_url
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("selected CDP target has no websocket URL"))?;
-    let settings = SettingsStore::default().load().unwrap_or_default();
-    let script = crate::assets::injection_script_with_settings(helper_port, &settings);
-    let ctx = crate::routes::BridgeContext::core(Arc::new(crate::routes::CoreRuntimeService::new(
-        debug_port,
-        StatusStore::default(),
-    )));
-    crate::bridge::install_bridge(
-        websocket_url,
-        crate::bridge::BRIDGE_BINDING_NAME,
-        Arc::new(move |path, payload| {
-            let ctx = ctx.clone();
-            Box::pin(
-                async move { Ok(crate::routes::handle_bridge_request(ctx, &path, payload).await) },
-            )
-        }),
-        &[script],
-    )
-    .await
 }
 
 async fn confirmed_pet_overlay_targets(
@@ -3181,10 +3451,11 @@ mod tests {
     }
 
     #[test]
-    fn launcher_only_probes_cdp_for_unrecognized_windows_processes() {
-        assert!(should_probe_launcher_cdp(true, false));
-        assert!(!should_probe_launcher_cdp(true, true));
-        assert!(!should_probe_launcher_cdp(false, false));
+    fn launcher_runtime_state_keeps_process_only_instances_in_starting_state() {
+        assert!(launcher_target_alive(true, false));
+        assert!(launcher_target_alive(false, true));
+        assert!(launcher_target_alive(true, true));
+        assert!(!launcher_target_alive(false, false));
     }
 
     #[test]
@@ -3348,6 +3619,50 @@ mod tests {
         assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 426 Upgrade Required"));
     }
 
+    #[tokio::test]
+    async fn helper_shutdown_requires_post_and_matching_loopback_bearer() {
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let control = HelperControl {
+            shutdown_token: "unit-test-token".to_string(),
+            shutdown_requested: shutdown_requested.clone(),
+        };
+
+        let missing_token = send_raw_helper_request_with_control(
+            b"POST /helper/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            control.clone(),
+        )
+        .await;
+        assert!(String::from_utf8_lossy(&missing_token)
+            .starts_with("HTTP/1.1 401 Unauthorized"));
+        assert!(!shutdown_requested.load(Ordering::Acquire));
+
+        let wrong_token = send_raw_helper_request_with_control(
+            b"POST /helper/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer wrong-token\r\n\r\n",
+            control.clone(),
+        )
+        .await;
+        assert!(String::from_utf8_lossy(&wrong_token)
+            .starts_with("HTTP/1.1 401 Unauthorized"));
+        assert!(!shutdown_requested.load(Ordering::Acquire));
+
+        let options = send_raw_helper_request_with_control(
+            b"OPTIONS /helper/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            control.clone(),
+        )
+        .await;
+        assert!(String::from_utf8_lossy(&options)
+            .starts_with("HTTP/1.1 405 Method Not Allowed"));
+        assert!(!shutdown_requested.load(Ordering::Acquire));
+
+        let matching_token = send_raw_helper_request_with_control(
+            b"POST /helper/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer unit-test-token\r\n\r\n",
+            control,
+        )
+        .await;
+        assert!(String::from_utf8_lossy(&matching_token).starts_with("HTTP/1.1 200 OK"));
+        assert!(shutdown_requested.load(Ordering::Acquire));
+    }
+
     #[test]
     fn protocol_proxy_request_body_decodes_zstd() {
         let body = br#"{"model":"gpt-5.6-sol","input":"probe","stream":false}"#;
@@ -3464,6 +3779,28 @@ mod tests {
         let helper = tokio::spawn(async move {
             let (stream, remote_addr) = listener.accept().await.unwrap();
             handle_helper_connection(stream, Some(remote_addr))
+                .await
+                .unwrap();
+        });
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        client.write_all(request).await.unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        helper.await.unwrap();
+        response
+    }
+
+    async fn send_raw_helper_request_with_control(
+        request: &[u8],
+        control: HelperControl,
+    ) -> Vec<u8> {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let helper = tokio::spawn(async move {
+            let (stream, remote_addr) = listener.accept().await.unwrap();
+            handle_helper_connection_with_control(stream, Some(remote_addr), Some(control))
                 .await
                 .unwrap();
         });
