@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use regex::Regex;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -163,27 +164,30 @@ fn sanitize_log_value(mut value: Value) -> Value {
 }
 
 fn sanitize_string(input: &str) -> String {
-    // 遮罩形如 Bearer <token> 或 sk-<key> 等常见密钥格式
-    let mut result = input.to_string();
-    if let Some(pos) = result.find("Bearer ") {
-        let after = &result[pos + 7..];
-        let end_pos = after.find(|c: char| c.is_whitespace() || c == '"' || c == ',' || c == ';').unwrap_or(after.len());
-        if end_pos > 0 {
-            result.replace_range(pos + 7..pos + 7 + end_pos, "[REDACTED]");
-        }
-    }
-    while let Some(pos) = result.find("sk-") {
-        let after = &result[pos + 3..];
-        let end_pos = after
-            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ';' || c == '}' || c == ']')
-            .unwrap_or(after.len());
-        if end_pos >= 8 {
-            result.replace_range(pos..pos + 3 + end_pos, "[REDACTED]");
-        } else {
-            break;
-        }
-    }
-    result
+    // 遮罩形如 Bearer <token>、sk-<key> 和 key=<value> 等常见密钥格式。
+    static BEARER_RE: OnceLock<Regex> = OnceLock::new();
+    static SK_RE: OnceLock<Regex> = OnceLock::new();
+    static QUERY_CREDENTIAL_RE: OnceLock<Regex> = OnceLock::new();
+
+    let result = BEARER_RE
+        .get_or_init(|| {
+            Regex::new(r#"(?i)bearer\s+[^\s"'\\]+"#).expect("valid bearer redaction regex")
+        })
+        .replace_all(input, "Bearer [REDACTED]");
+    let result = SK_RE
+        .get_or_init(|| {
+            Regex::new(r"(?i)sk-[A-Za-z0-9._~+/=-]{8,}").expect("valid API key redaction regex")
+        })
+        .replace_all(&result, "sk-[REDACTED]");
+    QUERY_CREDENTIAL_RE
+        .get_or_init(|| {
+            Regex::new(
+                r#"(?i)(^|[?&; \t\n\r"'(\[\{])((?:api[-_]?key|access[-_]?token|key|token|password|secret|auth|credential))=([^&\s"'\\;,}\]]+)"#,
+            )
+            .expect("valid query credential redaction regex")
+        })
+        .replace_all(&result, "$1$2=[REDACTED]")
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -232,5 +236,30 @@ mod tests {
         assert!(!serialized.contains("my-secret-token"));
         assert!(!serialized.contains("secret-bearer-value"));
         assert!(serialized.contains("normal-value"));
+    }
+
+    #[test]
+    fn sanitize_string_redacts_all_mixed_case_bearer_tokens_and_query_credentials() {
+        let input = "bearer abc-123 ... Bearer def-456 ... BeArEr ghi-789?x=1 api-key=secret-one&Token=secret-two&KEY=secret-three";
+
+        let sanitized = sanitize_string(input);
+
+        assert!(!sanitized.contains("abc-123"));
+        assert!(!sanitized.contains("def-456"));
+        assert!(!sanitized.contains("ghi-789?x=1"));
+        assert!(!sanitized.contains("secret-one"));
+        assert!(!sanitized.contains("secret-two"));
+        assert!(!sanitized.contains("secret-three"));
+        assert_eq!(sanitized.matches("Bearer [REDACTED]").count(), 3);
+    }
+
+    #[test]
+    fn sanitize_string_continues_after_malformed_bearer_input() {
+        let input = "bearer \\\"unterminated Bearer valid-token-123456 key=secret-value";
+
+        let sanitized = sanitize_string(input);
+
+        assert!(!sanitized.contains("valid-token-123456"));
+        assert!(!sanitized.contains("secret-value"));
     }
 }

@@ -37,6 +37,35 @@ test("sanitizeText completely redacts keys, Bearer tokens and query secrets", ()
   assert.ok(sanitized.includes("[REDACTED]"));
 });
 
+test("sanitizeText redacts every mixed-case Bearer token and query credential", () => {
+  const input =
+    'bearer abc-123 ... Bearer def-456 ... BeArEr ghi-789?x=1 api-key=secret-one&Token=secret-two&KEY=secret-three';
+
+  const sanitized = sanitizeText(input);
+
+  assert.ok(!sanitized.includes("abc-123"));
+  assert.ok(!sanitized.includes("def-456"));
+  assert.ok(!sanitized.includes("ghi-789?x=1"));
+  assert.ok(!sanitized.includes("secret-one"));
+  assert.ok(!sanitized.includes("secret-two"));
+  assert.ok(!sanitized.includes("secret-three"));
+  assert.equal((sanitized.match(/Bearer \[REDACTED\]/g) || []).length, 3);
+});
+
+test("unknown diagnostic descriptions never echo raw credentials", () => {
+  const rawMessage =
+    "network failed for sk-proj-raw-secret-1234567890 with bearer raw-bearer-token-123";
+  const classification = classifyHttpError(0, rawMessage);
+  const serverClassification = classifyHttpError(500, rawMessage);
+
+  assert.equal(classification.errorClass, "unknown");
+  assert.ok(!classification.statusDescription.includes("sk-proj-raw-secret-1234567890"));
+  assert.ok(!classification.statusDescription.includes("raw-bearer-token-123"));
+  assert.notEqual(classification.statusDescription, rawMessage);
+  assert.equal(serverClassification.errorClass, "server_error");
+  assert.ok(!serverClassification.statusDescription.includes("raw-bearer-token-123"));
+});
+
 test("sanitizeValue recursively strips sensitive fields in objects and arrays", () => {
   const payload = {
     apiKey: "sk-live-secret-key-12345678",
@@ -102,4 +131,29 @@ test("parseDiagnosticLogEntries parses protocol proxy events and limits to 20 it
   assert.ok(report.includes("本地请求与错误诊断看板"));
   assert.ok(report.includes("[HTTP"));
   assert.ok(!report.includes("secret-key-"));
+});
+
+test("parsed unknown network errors keep raw credentials out of the panel and report", () => {
+  const rawMessage =
+    "socket failed: sk-proj-raw-secret-1234567890 bearer raw-bearer-token-123";
+  const logText = JSON.stringify({
+    timestamp_ms: 1700000000000,
+    event: "protocol_proxy.request_error",
+    detail: {
+      relayName: "Provider",
+      endpoint: "https://api.example.test/v1/responses?api-key=raw-query-secret",
+      statusCode: 0,
+      error: rawMessage,
+    },
+  });
+
+  const items = parseDiagnosticLogEntries(logText);
+  assert.equal(items.length, 1);
+  const serialized = JSON.stringify(items[0]);
+  const report = formatSanitizedDiagnosticReport(items);
+
+  assert.ok(!serialized.includes("raw-secret-1234567890"));
+  assert.ok(!serialized.includes("raw-bearer-token-123"));
+  assert.ok(!report.includes("raw-query-secret"));
+  assert.ok(!report.includes(rawMessage));
 });

@@ -31,11 +31,14 @@ export function sanitizeText(text: string): string {
   if (!text) return "";
   let result = text;
   // Redact Bearer tokens
-  result = result.replace(/Bearer\s+[A-Za-z0-9._\-\~+/]+=*/gi, "Bearer [REDACTED]");
+  result = result.replace(/bearer\s+[^\s"'\\]+/gi, "Bearer [REDACTED]");
   // Redact sk- API keys
   result = result.replace(/sk-[A-Za-z0-9_\-]{8,}/gi, "sk-[REDACTED]");
   // Redact password/token query params
-  result = result.replace(/(key|token|password|secret|auth)=([^& \t\n\r"']+)/gi, "$1=[REDACTED]");
+  result = result.replace(
+    /(^|[?&; \t\n\r"'([{])((?:api[-_]?key|access[-_]?token|key|token|password|secret|auth|credential))=([^&\s"'\\;,}\]]+)/gi,
+    "$1$2=[REDACTED]",
+  );
   return result;
 }
 
@@ -56,7 +59,9 @@ export function sanitizeValue(val: unknown): unknown {
         lowerKey.includes("token") ||
         lowerKey.includes("secret") ||
         lowerKey.includes("password") ||
-        lowerKey.includes("authorization")
+        lowerKey.includes("authorization") ||
+        lowerKey.includes("auth") ||
+        lowerKey.includes("credential")
       ) {
         sanitizedObj[k] = "[REDACTED]";
       } else {
@@ -158,7 +163,9 @@ export function classifyHttpError(
   return {
     errorClass: "unknown",
     errorClassLabel: `异常错误 (${statusCode || "Err"})`,
-    statusDescription: errorMessage || "发生未知网络或上游错误",
+    statusDescription: statusCode
+      ? `请求失败（HTTP ${statusCode}），请检查供应商网络或密钥配置`
+      : "请求失败，请检查供应商网络或密钥配置",
     remedyActionLabel: "复制脱敏日志以排查问题",
     remedyTargetRoute: "about",
   };
@@ -184,7 +191,7 @@ export function parseDiagnosticLogEntries(logText: string, maxItems = 20): Reque
       const date = new Date(timestamp);
       const timeLabel = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}:${date.getSeconds().toString().padStart(2, "0")}`;
 
-      const relayName = String(detail.relayName || detail.provider || detail.relayId || "本地服务");
+      const relayName = sanitizeText(String(detail.relayName || detail.provider || detail.relayId || "本地服务"));
       const rawEndpoint = String(detail.endpoint || detail.url || "");
       const endpoint = sanitizeText(rawEndpoint);
       const statusCode = Number(detail.statusCode || detail.status || detail.http_status || 0);
@@ -216,8 +223,8 @@ export function parseDiagnosticLogEntries(logText: string, maxItems = 20): Reque
         isError,
         errorClass: classification.errorClass,
         errorClassLabel: classification.errorClassLabel,
-        statusDescription: classification.statusDescription,
-        remedyActionLabel: classification.remedyActionLabel,
+        statusDescription: sanitizeText(classification.statusDescription),
+        remedyActionLabel: sanitizeText(classification.remedyActionLabel),
         remedyTargetRoute: classification.remedyTargetRoute,
         sanitizedDetail,
       });
@@ -241,10 +248,15 @@ export function formatSanitizedDiagnosticReport(items: RequestDiagnosticItem[]):
 
   for (const item of items) {
     const statusTag = item.statusCode ? `[HTTP ${item.statusCode}]` : `[${item.isError ? "FAIL" : "OK"}]`;
-    lines.push(`- [${item.timeLabel}] ${statusTag} ${item.relayName} -> ${item.endpoint || item.event}`);
-    lines.push(`  类别: ${item.errorClassLabel} | 建议: ${item.remedyActionLabel}`);
-    if (item.statusDescription) {
-      lines.push(`  详情: ${item.statusDescription}`);
+    const relayName = sanitizeText(item.relayName);
+    const endpoint = sanitizeText(item.endpoint || item.event);
+    const errorClassLabel = sanitizeText(item.errorClassLabel);
+    const remedyActionLabel = sanitizeText(item.remedyActionLabel);
+    const statusDescription = sanitizeText(item.statusDescription);
+    lines.push(`- [${item.timeLabel}] ${statusTag} ${relayName} -> ${endpoint}`);
+    lines.push(`  类别: ${errorClassLabel} | 建议: ${remedyActionLabel}`);
+    if (statusDescription) {
+      lines.push(`  详情: ${statusDescription}`);
     }
     lines.push("");
   }

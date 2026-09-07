@@ -204,10 +204,16 @@ graph TD
     - 未知 500 / 网络错误报告生成断言不含明文 Key。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  - *（待任务实施后登记具体文件修改、核心逻辑改造与提交 commit）*
+  - `crates/codex-plus-core/src/diagnostic_log.rs`：引入已存在于锁文件的 `regex` 依赖，使用缓存的全局、不区分大小写正则替换所有 Bearer token；同时覆盖 `sk-` 凭证与 `api-key` / `token` / `key` / `access-token` 等查询参数，并保留递归对象字段脱敏。
+  - `apps/codex-plus-manager/src/request-diagnostics.ts`：扩展前端大小写无关多 Token/query 脱敏；未知错误不再透传 `errorMessage`，面板字段与导出报告增加二次安全过滤。
+  - `apps/codex-plus-manager/src/request-diagnostics.test.ts`、`crates/codex-plus-core/src/diagnostic_log.rs`、`crates/codex-plus-core/tests/diagnostic_log.rs`：补齐混合大小写多 Bearer、查询凭证、畸形输入、未知网络错误及面板/报告无明文凭证回归测试。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - *（待任务验证后登记客观测试命令、通过指标与失败路径覆盖断言）*
+  - `apps/codex-plus-manager`：`npm test` 通过 **198/198**（0 failure；基线 195 项新增 3 项 BUG-012 前端测试）。【T】
+  - `node --test src/request-diagnostics.test.ts`：**7/7 passed**。【T】
+  - `git diff --check`：通过。【S/T 辅助检查】
+  - `npm run check` 未完成：当前环境没有可执行的 `tsc`；`cargo test -p codex-plus-core --test diagnostic_log` 未完成：当前环境没有 `cargo`。Rust 编译、Rust 集成测试、TypeScript 类型检查和桌面 E2E 仍标记为 **未验证**。
+  - 安全边界：日志、面板、IPC 诊断条目和导出报告不携带完整 Key/Bearer；测试只使用合成 fixture。当前未提交、未推送。
 
 ---
 
