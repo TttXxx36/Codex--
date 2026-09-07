@@ -13,6 +13,7 @@ import type {
 } from "../App";
 import {
   AppSelect,
+  Badge,
   CardHead,
   Field,
   Panel,
@@ -257,4 +258,6 @@ function FeatureToggle({
       <ToggleVisual />
     </label>
   );
+}
+
 export default EnhanceScreen;

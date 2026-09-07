@@ -2,6 +2,7 @@ import { ExternalLink } from "lucide-react";
 import { memo, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { CardContent } from "@/components/ui/card";
 import { t, tf } from "@/i18n";
 import type { Actions, OverviewResult, UpdateResult } from "../App";

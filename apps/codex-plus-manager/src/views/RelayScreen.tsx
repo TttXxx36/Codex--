@@ -907,6 +907,7 @@ function RelayProfileDetail({
 }) {
   const {
     addRelayProfile,
+    aggregateRelayProfileValidation,
     applyRelayProfilePatchToFiles,
     codexBaseUrlFromConfig,
     deriveRelayProfileFromFiles,
@@ -1162,6 +1163,7 @@ function RelayProfileEditor({
     applyRelayProfilePatchToFiles,
     clampAggregateWeight,
     defaultRelayTestModel,
+    deriveRelayProfileFromFiles,
     isAggregateRelayProfile,
     normalizeAggregateConfig,
     normalizeAggregateRelayProfile,
@@ -1520,8 +1522,8 @@ function RelayProfileEditor({
             </Field>
             <Field className="relay-field-session-provider" label={t("Codex 会话身份")}>
               <AppSelect
-                value={sessionProvider}
-                onChange={(value) => updateDraft({ sessionProvider: value })}
+                value={sessionProvider || "custom"}
+                onChange={(value) => updateDraft({ sessionProvider: normalizeRelaySessionProvider(value) })}
                 options={[
                   { value: "custom", label: t("Custom（默认）") },
                   {
@@ -2223,8 +2225,8 @@ function AggregateRelayProfileEditor({
         </Field>
         <Field className="relay-field-session-provider" label={t("Codex 会话身份")}>
           <AppSelect
-            value={sessionProvider}
-            onChange={(value) => onProfileChange(normalizeAggregateRelayProfile({ ...profile, sessionProvider: value }, form))}
+            value={sessionProvider || "custom"}
+            onChange={(value) => onProfileChange(normalizeAggregateRelayProfile({ ...profile, sessionProvider: normalizeRelaySessionProvider(value) }, form))}
             options={[
               { value: "custom", label: t("Custom（默认）") },
               { value: "openai", label: t("OpenAI（兼容 ChatGPT Remote）") },

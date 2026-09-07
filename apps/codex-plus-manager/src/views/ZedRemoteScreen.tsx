@@ -1,4 +1,4 @@
-import { Copy, ExternalLink, RefreshCw, Save } from "lucide-react";
+import { Copy, ExternalLink, RefreshCw, Save, Trash2 } from "lucide-react";
 import { memo } from "react";
 
 import { Button } from "@/components/ui/button";

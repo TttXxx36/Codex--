@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Star,
+  Trash2,
 } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 
