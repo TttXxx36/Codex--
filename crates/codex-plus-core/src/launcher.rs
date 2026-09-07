@@ -607,6 +607,9 @@ where
     match result {
         Ok(handle) => Ok(handle),
         Err(error) => {
+            if launched.is_some() {
+                hooks.shutdown_bridge(debug_port).await;
+            }
             if helper_started {
                 hooks.shutdown_helper(helper_port).await;
             }
