@@ -145,19 +145,62 @@ pub fn ensure_session_indexes(db: &Connection) -> anyhow::Result<()> {
         let columns = table_columns(db, "threads")?
             .into_iter()
             .collect::<HashSet<_>>();
-        if columns.contains("updated_at_ms") {
-            let _ = db.execute_batch(
-                "CREATE INDEX IF NOT EXISTS idx_threads_updated_at_id ON threads (COALESCE(updated_at_ms, 0) DESC, id DESC);"
+        if columns.contains("id") {
+            let time_expression = thread_time_expression(&columns);
+            let mut updated_terms = if time_expression == "0" {
+                vec!["id DESC".to_string()]
+            } else {
+                vec![format!("{time_expression} DESC"), "id DESC".to_string()]
+            };
+            let covering_columns = thread_covering_columns(&columns);
+            for column in &covering_columns {
+                if *column != "id"
+                    && !updated_terms.iter().any(|term| term.as_str() == *column)
+                {
+                    updated_terms.push((*column).to_string());
+                }
+            }
+            let updated_index_sql = format!(
+                "CREATE INDEX IF NOT EXISTS idx_threads_updated_at_id ON threads ({});",
+                updated_terms.join(", ")
             );
-        } else if columns.contains("updated_at") {
-            let _ = db.execute_batch(
-                "CREATE INDEX IF NOT EXISTS idx_threads_updated_at_id ON threads (COALESCE(updated_at * 1000, 0) DESC, id DESC);"
-            );
-        }
-        if columns.contains("archived") {
-            let _ = db.execute_batch(
-                "CREATE INDEX IF NOT EXISTS idx_threads_archived_updated_at ON threads (archived, COALESCE(updated_at_ms, 0) DESC, id DESC);"
-            );
+            ensure_index_shape(
+                db,
+                "idx_threads_updated_at_id",
+                &updated_index_sql,
+                &covering_columns,
+                (time_expression != "0").then_some(time_expression),
+            )?;
+            if columns.contains("archived") {
+                let mut archived_terms = vec!["archived".to_string()];
+                if time_expression != "0" {
+                    archived_terms.push(format!("{time_expression} DESC"));
+                }
+                archived_terms.push("id DESC".to_string());
+                for column in &covering_columns {
+                    if *column != "id"
+                        && *column != "archived"
+                        && !archived_terms.iter().any(|term| term.as_str() == *column)
+                    {
+                        archived_terms.push((*column).to_string());
+                    }
+                }
+                let archived_index_sql = format!(
+                    "CREATE INDEX IF NOT EXISTS idx_threads_archived_updated_at ON threads ({});",
+                    archived_terms.join(", ")
+                );
+                let mut archived_columns = covering_columns.clone();
+                if !archived_columns.contains(&"archived") {
+                    archived_columns.push("archived");
+                }
+                ensure_index_shape(
+                    db,
+                    "idx_threads_archived_updated_at",
+                    &archived_index_sql,
+                    &archived_columns,
+                    (time_expression != "0").then_some(time_expression),
+                )?;
+            }
         }
     }
     if has_table(db, "thread_spawn_edges")? {
@@ -165,9 +208,9 @@ pub fn ensure_session_indexes(db: &Connection) -> anyhow::Result<()> {
             .into_iter()
             .collect::<HashSet<_>>();
         if columns.contains("child_thread_id") {
-            let _ = db.execute_batch(
+            db.execute_batch(
                 "CREATE INDEX IF NOT EXISTS idx_thread_spawn_edges_child ON thread_spawn_edges (child_thread_id);"
-            );
+            )?;
         }
     }
     if has_table(db, "agent_job_items")? {
@@ -175,21 +218,211 @@ pub fn ensure_session_indexes(db: &Connection) -> anyhow::Result<()> {
             .into_iter()
             .collect::<HashSet<_>>();
         if columns.contains("assigned_thread_id") {
-            let _ = db.execute_batch(
+            db.execute_batch(
                 "CREATE INDEX IF NOT EXISTS idx_agent_job_items_assigned ON agent_job_items (assigned_thread_id);"
-            );
+            )?;
         }
     }
     if has_table(db, "automation_runs")? {
-        let _ = db.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_automation_runs_updated ON automation_runs (COALESCE(updated_at, created_at, 0) DESC, thread_id DESC);"
-        );
+        let columns = table_columns(db, "automation_runs")?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        if columns.contains("thread_id") {
+            let time_expression = automation_time_expression(&columns);
+            let mut index_terms = if time_expression == "0" {
+                vec!["thread_id DESC".to_string()]
+            } else {
+                vec![format!("{time_expression} DESC"), "thread_id DESC".to_string()]
+            };
+            let covering_columns = automation_covering_columns(&columns);
+            for column in &covering_columns {
+                if *column != "thread_id"
+                    && !index_terms.iter().any(|term| term.as_str() == *column)
+                {
+                    index_terms.push((*column).to_string());
+                }
+            }
+            let index_sql = format!(
+                "CREATE INDEX IF NOT EXISTS idx_automation_runs_updated ON automation_runs ({});",
+                index_terms.join(", ")
+            );
+            ensure_index_shape(
+                db,
+                "idx_automation_runs_updated",
+                &index_sql,
+                &covering_columns,
+                (time_expression != "0").then_some(time_expression),
+            )?;
+        }
     }
     Ok(())
 }
 
 fn sqlite_limit(limit: usize) -> i64 {
     i64::try_from(limit).unwrap_or(i64::MAX)
+}
+
+fn thread_time_expression(columns: &HashSet<String>) -> &'static str {
+    if columns.contains("updated_at_ms") {
+        "COALESCE(updated_at_ms, 0)"
+    } else if columns.contains("updated_at") {
+        "COALESCE(updated_at * 1000, 0)"
+    } else if columns.contains("created_at_ms") {
+        "COALESCE(created_at_ms, 0)"
+    } else {
+        "0"
+    }
+}
+
+fn thread_select_time_expression(columns: &HashSet<String>) -> &'static str {
+    if columns.contains("updated_at_ms") {
+        "updated_at_ms"
+    } else if columns.contains("updated_at") {
+        "updated_at * 1000"
+    } else if columns.contains("created_at_ms") {
+        "created_at_ms"
+    } else {
+        "NULL"
+    }
+}
+
+fn automation_time_expression(columns: &HashSet<String>) -> &'static str {
+    match (
+        columns.contains("updated_at"),
+        columns.contains("created_at"),
+    ) {
+        (true, true) => "COALESCE(updated_at, created_at, 0)",
+        (true, false) => "COALESCE(updated_at, 0)",
+        (false, true) => "COALESCE(created_at, 0)",
+        (false, false) => "0",
+    }
+}
+
+fn strip_where_prefix(filter: &str) -> &str {
+    filter.strip_prefix("WHERE ").unwrap_or(filter)
+}
+
+fn order_by_expression(time_expression: &str, id_column: &str) -> String {
+    if time_expression == "0" {
+        format!("{id_column} DESC")
+    } else {
+        format!("{time_expression} DESC, {id_column} DESC")
+    }
+}
+
+fn keyset_predicate(
+    time_expression: &str,
+    id_column: &str,
+    cursor: Option<(&str, i64)>,
+    params: &mut Vec<SqlValue>,
+) -> Option<String> {
+    let (cursor_id, cursor_time) = cursor?;
+    if time_expression == "0" {
+        params.push(SqlValue::Text(cursor_id.to_string()));
+        return Some(format!("{id_column} < ?{}", params.len()));
+    }
+
+    params.push(SqlValue::Integer(cursor_time));
+    let time_index = params.len();
+    params.push(SqlValue::Text(cursor_id.to_string()));
+    let id_index = params.len();
+    Some(format!(
+        "({time_expression} < ?{time_index} OR ({time_expression} = ?{time_index} AND {id_column} < ?{id_index}))"
+    ))
+}
+
+fn combine_where_clauses(clauses: impl IntoIterator<Item = String>) -> String {
+    let clauses = clauses
+        .into_iter()
+        .filter(|clause| !clause.trim().is_empty())
+        .collect::<Vec<_>>();
+    if clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", clauses.join(" AND "))
+    }
+}
+
+fn index_has_required_columns(
+    db: &Connection,
+    index_name: &str,
+    required_columns: &[&str],
+    expected_expression: Option<&str>,
+) -> anyhow::Result<bool> {
+    let definition = db
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?1",
+            [index_name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(definition) = definition else {
+        return Ok(false);
+    };
+    if let Some(expected_expression) = expected_expression {
+        let normalized_definition = definition.split_whitespace().collect::<String>();
+        let normalized_expression = expected_expression.split_whitespace().collect::<String>();
+        if !normalized_definition.contains(&normalized_expression) {
+            return Ok(false);
+        }
+    }
+    let escaped_name = index_name.replace('"', "\"\"");
+    let mut stmt = db.prepare(&format!("PRAGMA index_info(\"{escaped_name}\")"))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, Option<String>>(2))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<HashSet<_>>();
+    Ok(required_columns
+        .iter()
+        .all(|column| names.contains(*column)))
+}
+
+fn ensure_index_shape(
+    db: &Connection,
+    index_name: &str,
+    create_sql: &str,
+    required_columns: &[&str],
+    expected_expression: Option<&str>,
+) -> anyhow::Result<()> {
+    if index_has_required_columns(db, index_name, required_columns, expected_expression)? {
+        return Ok(());
+    }
+    db.execute_batch(&format!("DROP INDEX IF EXISTS \"{index_name}\";"))?;
+    db.execute_batch(create_sql)?;
+    Ok(())
+}
+
+fn thread_covering_columns(columns: &HashSet<String>) -> Vec<&'static str> {
+    [
+        "id",
+        "title",
+        "cwd",
+        "model_provider",
+        "archived",
+        "updated_at_ms",
+        "updated_at",
+        "created_at_ms",
+        "rollout_path",
+    ]
+    .into_iter()
+    .filter(|column| columns.contains(*column))
+    .collect()
+}
+
+fn automation_covering_columns(columns: &HashSet<String>) -> Vec<&'static str> {
+    [
+        "thread_id",
+        "thread_title",
+        "source_cwd",
+        "status",
+        "updated_at",
+        "created_at",
+    ]
+    .into_iter()
+    .filter(|column| columns.contains(*column))
+    .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -292,10 +525,34 @@ impl SQLiteStorageAdapter {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
-        let _ = ensure_session_indexes(&db);
+        ensure_session_indexes(&db)?;
         match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => self.list_codex_threads(&db, limit),
             Some(SchemaKind::CodexAutomationRuns) => self.list_codex_automation_runs(&db, limit),
+            _ => anyhow::bail!("Unsupported local storage schema"),
+        }
+    }
+
+    /// Lists one bounded page after `(id, updated_at_ms)` using the database's
+    /// detected time column. The tuple order mirrors the frontend cursor's
+    /// tie-breaker: time is compared first, then the session id.
+    pub fn list_local_sessions_keyset(
+        &self,
+        limit: usize,
+        cursor: Option<(&str, i64)>,
+    ) -> anyhow::Result<Vec<LocalSession>> {
+        if !self.db_path.exists() {
+            return Ok(Vec::new());
+        }
+        let db = Connection::open(&self.db_path)?;
+        ensure_session_indexes(&db)?;
+        match schema_kind(&db)? {
+            Some(SchemaKind::CodexThreads) => {
+                self.list_codex_threads_keyset(&db, limit, cursor)
+            }
+            Some(SchemaKind::CodexAutomationRuns) => {
+                self.list_codex_automation_runs_keyset(&db, limit, cursor)
+            }
             _ => anyhow::bail!("Unsupported local storage schema"),
         }
     }
@@ -305,7 +562,7 @@ impl SQLiteStorageAdapter {
             return Ok(Vec::new());
         }
         let db = Connection::open(&self.db_path)?;
-        let _ = ensure_session_indexes(&db);
+        ensure_session_indexes(&db)?;
         let (table, id_column, filter) = match schema_kind(&db)? {
             Some(SchemaKind::CodexThreads) => ("threads", "id", codex_thread_filter(&db)?),
             Some(SchemaKind::CodexAutomationRuns) => (
@@ -321,10 +578,72 @@ impl SQLiteStorageAdapter {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Returns the normalized ordering time for one session, if this database
+    /// contains an eligible row. This keeps cross-database keyset merging
+    /// bounded while allowing the caller to discard an older duplicate that
+    /// was already represented by a newer row in another database.
+    pub fn find_local_session_time(&self, session_id: &str) -> anyhow::Result<Option<i64>> {
+        if !self.db_path.exists() {
+            return Ok(None);
+        }
+        let db = Connection::open(&self.db_path)?;
+        ensure_session_indexes(&db)?;
+        match schema_kind(&db)? {
+            Some(SchemaKind::CodexThreads) => {
+                let columns = table_columns(&db, "threads")?
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+                let time_expression = thread_time_expression(&columns);
+                let filter = codex_thread_filter(&db)?;
+                let where_clause = combine_where_clauses(
+                    [
+                        "id = ?1".to_string(),
+                        strip_where_prefix(&filter).to_string(),
+                    ]
+                    .into_iter(),
+                );
+                let sql = format!(
+                    "SELECT {time_expression} FROM threads {where_clause} LIMIT 1"
+                );
+                let value: Option<Option<i64>> = db
+                    .query_row(&sql, [session_id], |row| row.get(0))
+                    .optional()?;
+                Ok(value.map(|time| time.unwrap_or(0)))
+            }
+            Some(SchemaKind::CodexAutomationRuns) => {
+                let columns = table_columns(&db, "automation_runs")?
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+                let time_expression = automation_time_expression(&columns);
+                let sql = format!(
+                    "SELECT {time_expression}
+                     FROM automation_runs
+                     WHERE COALESCE(thread_id, '') <> '' AND thread_id = ?1
+                     ORDER BY {time_expression} DESC
+                     LIMIT 1"
+                );
+                let value: Option<Option<i64>> = db
+                    .query_row(&sql, [session_id], |row| row.get(0))
+                    .optional()?;
+                Ok(value.map(|time| time.unwrap_or(0)))
+            }
+            _ => anyhow::bail!("Unsupported local storage schema"),
+        }
+    }
+
     fn list_codex_threads(
         &self,
         db: &Connection,
         limit: usize,
+    ) -> anyhow::Result<Vec<LocalSession>> {
+        self.list_codex_threads_keyset(db, limit, None)
+    }
+
+    fn list_codex_threads_keyset(
+        &self,
+        db: &Connection,
+        limit: usize,
+        cursor: Option<(&str, i64)>,
     ) -> anyhow::Result<Vec<LocalSession>> {
         let columns = table_columns(&db, "threads")?
             .into_iter()
@@ -333,26 +652,31 @@ impl SQLiteStorageAdapter {
         let cwd = optional_column_expression(&columns, "cwd", "''");
         let model_provider = optional_column_expression(&columns, "model_provider", "''");
         let archived = optional_column_expression(&columns, "archived", "0");
-        let updated_at_ms = if columns.contains("updated_at_ms") {
-            "updated_at_ms"
-        } else if columns.contains("updated_at") {
-            "updated_at * 1000"
-        } else if columns.contains("created_at_ms") {
-            "created_at_ms"
-        } else {
-            "NULL"
-        };
+        let updated_at_ms = thread_select_time_expression(&columns);
+        let time_expression = thread_time_expression(&columns);
         let rollout_path = optional_column_expression(&columns, "rollout_path", "''");
         let child_thread_filter = codex_thread_filter(db)?;
+        let mut params = Vec::new();
+        let keyset = keyset_predicate(time_expression, "id", cursor, &mut params);
+        let where_clause = combine_where_clauses(
+            [
+                strip_where_prefix(&child_thread_filter).to_string(),
+                keyset.unwrap_or_default(),
+            ]
+            .into_iter(),
+        );
+        let limit_index = params.len() + 1;
+        params.push(SqlValue::Integer(sqlite_limit(limit)));
+        let order_by = order_by_expression(time_expression, "id");
         let sql = format!(
             "SELECT id, {title}, {cwd}, {model_provider}, {archived}, {updated_at_ms}, {rollout_path}
              FROM threads
-             {child_thread_filter}
-             ORDER BY COALESCE({updated_at_ms}, 0) DESC, id DESC
-             LIMIT ?1"
+             {where_clause}
+             ORDER BY {order_by}
+             LIMIT ?{limit_index}"
         );
         let mut stmt = db.prepare(&sql)?;
-        let rows = stmt.query_map([sqlite_limit(limit)], |row| {
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
             Ok(LocalSession {
                 id: row.get(0)?,
                 title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
@@ -372,6 +696,15 @@ impl SQLiteStorageAdapter {
         db: &Connection,
         limit: usize,
     ) -> anyhow::Result<Vec<LocalSession>> {
+        self.list_codex_automation_runs_keyset(db, limit, None)
+    }
+
+    fn list_codex_automation_runs_keyset(
+        &self,
+        db: &Connection,
+        limit: usize,
+        cursor: Option<(&str, i64)>,
+    ) -> anyhow::Result<Vec<LocalSession>> {
         let columns = table_columns(db, "automation_runs")?
             .into_iter()
             .collect::<HashSet<_>>();
@@ -380,15 +713,28 @@ impl SQLiteStorageAdapter {
         let status = optional_column_expression(&columns, "status", "''");
         let updated_at = optional_column_expression(&columns, "updated_at", "NULL");
         let created_at = optional_column_expression(&columns, "created_at", "NULL");
+        let time_expression = automation_time_expression(&columns);
+        let mut params = Vec::new();
+        let keyset = keyset_predicate(time_expression, "thread_id", cursor, &mut params);
+        let where_clause = combine_where_clauses(
+            [
+                "COALESCE(thread_id, '') <> ''".to_string(),
+                keyset.unwrap_or_default(),
+            ]
+            .into_iter(),
+        );
+        let limit_index = params.len() + 1;
+        params.push(SqlValue::Integer(sqlite_limit(limit)));
+        let order_by = order_by_expression(time_expression, "thread_id");
         let sql = format!(
             "SELECT thread_id, {title}, {cwd}, {status}, {updated_at}, {created_at}
              FROM automation_runs
-             WHERE COALESCE(thread_id, '') <> ''
-             ORDER BY COALESCE({updated_at}, {created_at}, 0) DESC, thread_id DESC
-             LIMIT ?1"
+             {where_clause}
+             ORDER BY {order_by}
+             LIMIT ?{limit_index}"
         );
         let mut stmt = db.prepare(&sql)?;
-        let rows = stmt.query_map([sqlite_limit(limit)], |row| {
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), |row| {
             let updated_at_ms = row
                 .get::<_, Option<i64>>(4)?
                 .or(row.get::<_, Option<i64>>(5)?);

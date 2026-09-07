@@ -70,6 +70,7 @@ import {
 import { shouldBackfillRelayProfileBeforeSwitch } from "./relay-live-files";
 import { resolveProviderSyncCompletion } from "./provider-sync-flow";
 import { resolveLaunchStatus } from "./launch-status";
+import { toSessionCursorParam, type SessionCursor } from "./session-search";
 import {
   AppSelect,
   Badge,
@@ -448,7 +449,11 @@ type LocalSessionsResult = CommandResult<{
   limit: number;
   hasMore: boolean;
   totalCount: number;
+  nextCursor?: string | null;
+  prevCursor?: string | null;
 }>;
+
+type LocalSessionsPage = number | SessionCursor | string | null;
 
 type SessionImportResult = CommandResult<{
   sessionId: string;
@@ -1333,14 +1338,19 @@ export function App() {
     }
   };
 
-  const refreshLocalSessions = async (silent = false, offset = 0): Promise<LocalSessionsResult | null> => {
+  const refreshLocalSessions = async (
+    silent = false,
+    page: LocalSessionsPage = 0,
+  ): Promise<LocalSessionsResult | null> => {
+    const offset = typeof page === "number" ? Math.max(0, page) : 0;
+    const cursor = typeof page === "number" ? undefined : toSessionCursorParam(page);
     const result = await run(() =>
       call<LocalSessionsResult>("list_local_sessions", {
-        request: { offset, limit: 50 },
+        request: { offset, limit: 50, ...(cursor ? { cursor } : {}) },
       }),
     );
     if (result) {
-      if (!result.sessions.length && result.offset > 0) {
+      if (!result.sessions.length && typeof page === "number" && result.offset > 0) {
         return refreshLocalSessions(silent, Math.max(0, result.offset - result.limit));
       }
       setLocalSessions(result);
@@ -3752,7 +3762,7 @@ export type Actions = {
   installMarketScript: (id: string) => Promise<void>;
   setUserScriptEnabled: (key: string, enabled: boolean) => Promise<void>;
   deleteUserScript: (key: string) => Promise<void>;
-  refreshLocalSessions: (silent?: boolean, offset?: number) => Promise<LocalSessionsResult | null>;
+  refreshLocalSessions: (silent?: boolean, page?: LocalSessionsPage) => Promise<LocalSessionsResult | null>;
   importLocalSession: () => Promise<void>;
   importSessionUrl: (url?: string) => Promise<void>;
   sessionShareUrl: string;

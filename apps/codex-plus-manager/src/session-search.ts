@@ -60,13 +60,32 @@ export function decodeSessionCursor(raw: string): SessionCursor | null {
       jsonStr = atob(base64);
     }
     const parsed = JSON.parse(jsonStr);
-    if (typeof parsed?.u === 'number' && typeof parsed?.i === 'string') {
-      return { updatedAtMs: parsed.u, id: parsed.i };
+    const updatedAtMs = parsed?.u ?? parsed?.updatedAtMs;
+    const id = parsed?.i ?? parsed?.id;
+    if (Number.isFinite(updatedAtMs) && typeof id === 'string' && id.length > 0) {
+      return { updatedAtMs, id };
     }
     return null;
   } catch {
     return null;
   }
+}
+
+export function toSessionCursorParam(
+  cursor: SessionCursor | string | null | undefined,
+): string | undefined {
+  if (typeof cursor === 'string') {
+    return decodeSessionCursor(cursor) ? cursor : undefined;
+  }
+  if (
+    cursor &&
+    Number.isFinite(cursor.updatedAtMs) &&
+    typeof cursor.id === 'string' &&
+    cursor.id.length > 0
+  ) {
+    return encodeSessionCursor(cursor);
+  }
+  return undefined;
 }
 
 /**

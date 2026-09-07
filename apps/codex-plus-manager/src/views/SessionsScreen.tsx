@@ -27,7 +27,11 @@ type LocalSessionsState = {
   limit: number;
   hasMore: boolean;
   totalCount: number;
+  nextCursor?: string | null;
+  prevCursor?: string | null;
 };
+
+type LocalSessionsPage = number | string | null;
 
 type ProviderSyncProgressState = {
   active: boolean;
@@ -50,7 +54,7 @@ type SessionSettings = {
 };
 
 type SessionsScreenActions = {
-  refreshLocalSessions: (silent?: boolean, offset?: number) => Promise<LocalSessionsState | null>;
+  refreshLocalSessions: (silent?: boolean, page?: LocalSessionsPage) => Promise<LocalSessionsState | null>;
   importLocalSession: () => Promise<void>;
   syncProvidersNow: () => Promise<void>;
   saveSettings: () => Promise<void>;
@@ -97,8 +101,11 @@ const SessionsScreen = memo(function SessionsScreen({
   const items = sessions?.sessions ?? [];
   const pageOffset = sessions?.offset ?? 0;
   const pageSize = sessions?.limit ?? 50;
-  const currentPage = Math.floor(pageOffset / pageSize) + 1;
-  const hasPreviousPage = pageOffset > 0;
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
+  const currentPage = cursorHistory.length > 0 || sessions?.prevCursor
+    ? cursorHistory.length + 1
+    : Math.floor(pageOffset / pageSize) + 1;
+  const hasPreviousPage = cursorHistory.length > 0 || Boolean(sessions?.prevCursor) || pageOffset > 0;
   const hasNextPage = sessions?.hasMore === true;
   const activeCount = items.filter((item) => !item.archived).length;
   const archivedCount = items.length - activeCount;
@@ -125,6 +132,43 @@ const SessionsScreen = memo(function SessionsScreen({
       return next.size === current.size ? current : next;
     });
   }, [items]);
+
+  useEffect(() => {
+    if (sessions?.offset === 0 && !sessions.prevCursor) {
+      setCursorHistory([]);
+    }
+  }, [sessions?.offset, sessions?.prevCursor]);
+
+  const refreshFromFirstPage = () => {
+    setCursorHistory([]);
+    void actions.refreshLocalSessions();
+  };
+
+  const goToPreviousPage = async () => {
+    if (cursorHistory.length > 0 || sessions?.prevCursor) {
+      const previousCursor = cursorHistory.length > 0
+        ? cursorHistory[cursorHistory.length - 1]
+        : null;
+      const result = await actions.refreshLocalSessions(true, previousCursor);
+      if (result) {
+        setCursorHistory((current) => current.slice(0, -1));
+      }
+      return;
+    }
+    await actions.refreshLocalSessions(true, Math.max(0, pageOffset - pageSize));
+  };
+
+  const goToNextPage = async () => {
+    if (sessions?.nextCursor) {
+      const previousCursor = sessions.prevCursor ?? null;
+      const result = await actions.refreshLocalSessions(true, sessions.nextCursor);
+      if (result?.sessions.length) {
+        setCursorHistory((current) => [...current, previousCursor]);
+      }
+      return;
+    }
+    await actions.refreshLocalSessions(true, pageOffset + pageSize);
+  };
 
   const toggleSessionSelection = (sessionId: string, checked: boolean) => {
     setSelectedSessionIds((current) => {
@@ -217,7 +261,7 @@ const SessionsScreen = memo(function SessionsScreen({
             </label>
 
             <div className="session-repair-actions">
-              <Button onClick={() => void actions.refreshLocalSessions()} variant="outline">
+              <Button onClick={refreshFromFirstPage} variant="outline">
                 <RefreshCw className="h-4 w-4" />
                 {t("刷新会话")}
               </Button>
@@ -374,7 +418,7 @@ const SessionsScreen = memo(function SessionsScreen({
                 <Button
                   aria-label={t("上一页")}
                   disabled={!hasPreviousPage || bulkDeleting}
-                  onClick={() => void actions.refreshLocalSessions(true, Math.max(0, pageOffset - pageSize))}
+                  onClick={() => void goToPreviousPage()}
                   size="icon"
                   title={t("上一页")}
                   variant="outline"
@@ -385,7 +429,7 @@ const SessionsScreen = memo(function SessionsScreen({
                 <Button
                   aria-label={t("下一页")}
                   disabled={!hasNextPage || bulkDeleting}
-                  onClick={() => void actions.refreshLocalSessions(true, pageOffset + pageSize)}
+                  onClick={() => void goToNextPage()}
                   size="icon"
                   title={t("下一页")}
                   variant="outline"

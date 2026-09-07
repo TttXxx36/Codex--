@@ -1,5 +1,7 @@
 use codex_plus_core::models::{DeleteStatus, SessionRef};
-use codex_plus_data::{BackupStore, SQLiteStorageAdapter, delete_local_from_paths};
+use codex_plus_data::{
+    BackupStore, SQLiteStorageAdapter, delete_local_from_paths, ensure_session_indexes,
+};
 use rusqlite::Connection;
 use serde_json::json;
 use std::fs;
@@ -789,6 +791,165 @@ fn list_local_sessions_reads_codex_threads_ordered_by_update_time() {
     let first_page = adapter.list_local_sessions_limited(1).unwrap();
     assert_eq!(first_page.len(), 1);
     assert_eq!(first_page[0].id, "t2");
+
+    let first_keyset_page = adapter.list_local_sessions_keyset(1, None).unwrap();
+    assert_eq!(first_keyset_page[0].id, "t2");
+    let second_keyset_page = adapter
+        .list_local_sessions_keyset(
+            1,
+            Some((
+                first_keyset_page[0].id.as_str(),
+                first_keyset_page[0].updated_at_ms.unwrap(),
+            )),
+        )
+        .unwrap();
+    assert_eq!(second_keyset_page[0].id, "t1");
+}
+
+#[test]
+fn ensure_session_indexes_adapts_to_legacy_thread_and_automation_schemas() {
+    let thread_variants = [
+        ("updated_at", "updated_at INTEGER"),
+        ("created_at_ms", "created_at_ms INTEGER"),
+        ("no_time", ""),
+    ];
+
+    for (name, time_column) in thread_variants {
+        let db = Connection::open_in_memory().unwrap();
+        let optional_time_column = if time_column.is_empty() {
+            String::new()
+        } else {
+            format!(", {time_column}")
+        };
+        db.execute(
+            &format!(
+                "CREATE TABLE threads (
+                    id TEXT PRIMARY KEY,
+                    rollout_path TEXT,
+                    title TEXT,
+                    archived INTEGER{optional_time_column}
+                )"
+            ),
+            [],
+        )
+        .unwrap();
+
+        ensure_session_indexes(&db).unwrap();
+
+        let archived_index_sql: String = db
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_threads_archived_updated_at'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(archived_index_sql.contains("archived"), "variant: {name}");
+        if name == "no_time" {
+            assert!(archived_index_sql.contains("archived, id DESC"));
+        } else {
+            assert!(archived_index_sql.contains(time_column.split_whitespace().next().unwrap()));
+        }
+    }
+
+    let db = Connection::open_in_memory().unwrap();
+    db.execute(
+        "CREATE TABLE automation_runs (
+            thread_id TEXT PRIMARY KEY,
+            thread_title TEXT,
+            source_cwd TEXT,
+            status TEXT
+        )",
+        [],
+    )
+    .unwrap();
+    ensure_session_indexes(&db).unwrap();
+    let automation_index_sql: String = db
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_automation_runs_updated'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(automation_index_sql.contains("thread_id"));
+}
+
+#[test]
+fn list_local_sessions_keyset_returns_contiguous_pages_without_duplicates() {
+    let tmp = tempdir().unwrap();
+    let db_path = tmp.path().join("state_5.sqlite");
+    let db = Connection::open(&db_path).unwrap();
+    db.execute(
+        "CREATE TABLE threads (
+            id TEXT PRIMARY KEY,
+            rollout_path TEXT,
+            title TEXT,
+            cwd TEXT,
+            archived INTEGER,
+            updated_at_ms INTEGER
+        )",
+        [],
+    )
+    .unwrap();
+    for (id, updated_at_ms) in [
+        ("t5", 500_i64),
+        ("t4b", 400),
+        ("t4a", 400),
+        ("t3", 300),
+        ("t2", 200),
+        ("t1", 100),
+    ] {
+        db.execute(
+            "INSERT INTO threads (id, rollout_path, title, cwd, archived, updated_at_ms)
+             VALUES (?1, '', ?1, '', 0, ?2)",
+            (id, updated_at_ms),
+        )
+        .unwrap();
+    }
+    drop(db);
+
+    let adapter = SQLiteStorageAdapter::new(
+        &db_path,
+        BackupStore::new(tmp.path().join("backups")),
+    );
+    let first_page = adapter.list_local_sessions_keyset(2, None).unwrap();
+    assert_eq!(
+        first_page.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+        ["t5", "t4b"]
+    );
+
+    let last = first_page.last().unwrap();
+    let second_page = adapter
+        .list_local_sessions_keyset(2, Some((last.id.as_str(), last.updated_at_ms.unwrap())))
+        .unwrap();
+    assert_eq!(
+        second_page.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+        ["t4a", "t3"]
+    );
+
+    let last = second_page.last().unwrap();
+    let third_page = adapter
+        .list_local_sessions_keyset(2, Some((last.id.as_str(), last.updated_at_ms.unwrap())))
+        .unwrap();
+    assert_eq!(
+        third_page.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+        ["t2", "t1"]
+    );
+
+    let all_ids = first_page
+        .into_iter()
+        .chain(second_page)
+        .chain(third_page)
+        .map(|item| item.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        all_ids,
+        vec!["t5", "t4b", "t4a", "t3", "t2", "t1"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(all_ids.len(), 6);
+    assert_eq!(all_ids.iter().collect::<std::collections::HashSet<_>>().len(), 6);
 }
 
 #[test]
@@ -883,6 +1044,19 @@ fn list_local_sessions_reads_codex_automation_runs_schema() {
     assert_eq!(sessions[0].db_path, db_path.to_string_lossy());
     assert_eq!(sessions[1].id, "t1");
     assert_eq!(adapter.list_local_session_ids().unwrap(), ["t1", "t2"]);
+
+    let first_keyset_page = adapter.list_local_sessions_keyset(1, None).unwrap();
+    assert_eq!(first_keyset_page[0].id, "t2");
+    let second_keyset_page = adapter
+        .list_local_sessions_keyset(
+            1,
+            Some((
+                first_keyset_page[0].id.as_str(),
+                first_keyset_page[0].updated_at_ms.unwrap(),
+            )),
+        )
+        .unwrap();
+    assert_eq!(second_keyset_page[0].id, "t1");
 }
 
 #[test]

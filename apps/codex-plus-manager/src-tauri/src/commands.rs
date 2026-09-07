@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::Engine;
 use codex_plus_core::install::SILENT_BINARY;
 use codex_plus_core::models::{DeleteResult, SessionRef};
 use codex_plus_core::relay_environment::RelayEnvironmentReport;
@@ -210,6 +211,8 @@ pub struct LocalSessionsPayload {
     pub limit: usize,
     pub has_more: bool,
     pub total_count: usize,
+    pub next_cursor: Option<String>,
+    pub prev_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -239,6 +242,44 @@ pub struct ListLocalSessionsRequest {
     pub offset: usize,
     #[serde(default = "default_local_sessions_page_size")]
     pub limit: usize,
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalSessionCursor {
+    #[serde(alias = "u")]
+    updated_at_ms: i64,
+    #[serde(alias = "i")]
+    id: String,
+}
+
+fn encode_local_session_cursor(cursor: &LocalSessionCursor) -> String {
+    let payload = serde_json::json!({
+        "u": cursor.updated_at_ms,
+        "i": cursor.id.as_str(),
+    })
+    .to_string();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.as_bytes())
+}
+
+fn decode_local_session_cursor(raw: &str) -> anyhow::Result<LocalSessionCursor> {
+    if raw.trim().is_empty() || raw.len() > 4096 {
+        anyhow::bail!("Invalid local session cursor");
+    }
+    let bytes = if raw.trim_start().starts_with('{') {
+        raw.as_bytes().to_vec()
+    } else {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(raw)
+            .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(raw))?
+    };
+    let cursor: LocalSessionCursor = serde_json::from_slice(&bytes)?;
+    if cursor.id.trim().is_empty() {
+        anyhow::bail!("Invalid local session cursor id");
+    }
+    Ok(cursor)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2347,18 +2388,56 @@ pub fn list_local_sessions(
     let request = request.unwrap_or(ListLocalSessionsRequest {
         offset: 0,
         limit: DEFAULT_LOCAL_SESSIONS_PAGE_SIZE,
+        cursor: None,
     });
     let offset = request.offset;
     let limit = request.limit.clamp(1, MAX_LOCAL_SESSIONS_PAGE_SIZE);
-    let fetch_limit = offset.saturating_add(limit).saturating_add(1);
+    let cursor = match request
+        .cursor
+        .as_deref()
+        .map(decode_local_session_cursor)
+        .transpose()
+    {
+        Ok(cursor) => cursor,
+        Err(error) => {
+            return failed(
+                &format!("本地会话游标无效：{error}"),
+                LocalSessionsPayload {
+                    db_path: String::new(),
+                    db_paths: Vec::new(),
+                    sessions: Vec::new(),
+                    offset: 0,
+                    limit,
+                    has_more: false,
+                    total_count: 0,
+                    next_cursor: None,
+                    prev_cursor: None,
+                },
+            );
+        }
+    };
+    let use_keyset = cursor.is_some();
+    let fetch_limit = if use_keyset {
+        limit.saturating_add(1)
+    } else {
+        offset.saturating_add(limit).saturating_add(1)
+    };
     let home = codex_plus_core::codex_sqlite::default_codex_home_dir();
     let db_paths = codex_plus_core::codex_sqlite::codex_session_db_paths_from_home(&home);
     let mut sessions = Vec::new();
     let mut session_ids = std::collections::HashSet::new();
+    let mut duplicate_session_ids = std::collections::HashSet::new();
     let mut errors = Vec::new();
     for db_path in &db_paths {
         let adapter = local_session_adapter(db_path);
         match adapter.list_local_session_ids() {
+            Ok(ids) if use_keyset => {
+                for id in ids {
+                    if !session_ids.insert(id.clone()) {
+                        duplicate_session_ids.insert(id);
+                    }
+                }
+            }
             Ok(ids) => session_ids.extend(ids),
             Err(error) if db_path.exists() => {
                 errors.push(format!("{}: {error}", db_path.to_string_lossy()));
@@ -2366,7 +2445,15 @@ pub fn list_local_sessions(
             }
             Err(_) => continue,
         }
-        match adapter.list_local_sessions_limited(fetch_limit) {
+        let page_result = if let Some(cursor) = cursor.as_ref() {
+            adapter.list_local_sessions_keyset(
+                fetch_limit,
+                Some((cursor.id.as_str(), cursor.updated_at_ms)),
+            )
+        } else {
+            adapter.list_local_sessions_limited(fetch_limit)
+        };
+        match page_result {
             Ok(mut items) => sessions.append(&mut items),
             Err(error) if db_path.exists() => {
                 errors.push(format!("{}: {error}", db_path.to_string_lossy()));
@@ -2377,13 +2464,70 @@ pub fn list_local_sessions(
     sessions.sort_by(|left, right| {
         right
             .updated_at_ms
-            .cmp(&left.updated_at_ms)
+            .unwrap_or(0)
+            .cmp(&left.updated_at_ms.unwrap_or(0))
             .then_with(|| right.id.cmp(&left.id))
     });
     let mut seen_session_ids = std::collections::HashSet::new();
     sessions.retain(|session| seen_session_ids.insert(session.id.clone()));
-    let has_more = sessions.len() > offset.saturating_add(limit);
-    let sessions = sessions.into_iter().skip(offset).take(limit).collect();
+    if use_keyset {
+        let mut canonical_sessions = Vec::with_capacity(sessions.len());
+        let mut lookup_errors = std::collections::HashSet::new();
+        for session in sessions {
+            if !duplicate_session_ids.contains(&session.id) {
+                canonical_sessions.push(session);
+                continue;
+            }
+            let session_time = session.updated_at_ms.unwrap_or(0);
+            let mut superseded = false;
+            for db_path in &db_paths {
+                let adapter = local_session_adapter(db_path);
+                match adapter.find_local_session_time(&session.id) {
+                    Ok(Some(other_time)) if other_time > session_time => {
+                        superseded = true;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(error)
+                        if db_path.exists() && lookup_errors.insert(db_path.clone()) =>
+                    {
+                        errors.push(format!("{}: {error}", db_path.to_string_lossy()));
+                    }
+                    Err(_) => {}
+                }
+            }
+            if !superseded {
+                canonical_sessions.push(session);
+            }
+        }
+        sessions = canonical_sessions;
+    }
+    let has_more = if use_keyset {
+        sessions.len() > limit
+    } else {
+        sessions.len() > offset.saturating_add(limit)
+    };
+    let next_cursor = if has_more {
+        let cursor_item = if use_keyset {
+            sessions.get(limit.saturating_sub(1))
+        } else {
+            sessions.get(offset.saturating_add(limit).saturating_sub(1))
+        };
+        cursor_item.map(|session| {
+            encode_local_session_cursor(&LocalSessionCursor {
+                updated_at_ms: session.updated_at_ms.unwrap_or(0),
+                id: session.id.clone(),
+            })
+        })
+    } else {
+        None
+    };
+    let sessions = if use_keyset {
+        sessions.into_iter().take(limit).collect()
+    } else {
+        sessions.into_iter().skip(offset).take(limit).collect()
+    };
+    let response_offset = if use_keyset { 0 } else { offset };
     let payload = LocalSessionsPayload {
         db_path: db_paths
             .first()
@@ -2394,18 +2538,21 @@ pub fn list_local_sessions(
             .map(|path| path.to_string_lossy().to_string())
             .collect(),
         sessions,
-        offset,
+        offset: response_offset,
         limit,
         has_more,
         total_count: session_ids.len(),
+        next_cursor,
+        prev_cursor: cursor.as_ref().map(encode_local_session_cursor),
     };
-    let page = offset / limit + 1;
+    let page = response_offset / limit + 1;
     if errors.is_empty() {
         ok(
-            &format!(
-                "已读取第 {page} 页，共 {} 个本地会话。",
-                payload.sessions.len()
-            ),
+            if use_keyset {
+                &format!("已读取游标第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
+            } else {
+                &format!("已读取第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
+            },
             payload,
         )
     } else {
@@ -7273,16 +7420,24 @@ mod tests {
         let first_page = list_local_sessions(Some(ListLocalSessionsRequest {
             offset: 0,
             limit: 2,
+            cursor: None,
         }));
         assert_eq!(first_page.payload.sessions.len(), 2);
         assert_eq!(first_page.payload.sessions[0].id, "t2");
         assert_eq!(first_page.payload.sessions[1].id, "t1");
         assert!(first_page.payload.has_more);
         assert_eq!(first_page.payload.total_count, 3);
+        assert!(first_page.payload.next_cursor.is_some());
 
         let second_page = list_local_sessions(Some(ListLocalSessionsRequest {
             offset: 2,
             limit: 2,
+            cursor: None,
+        }));
+        let keyset_page = list_local_sessions(Some(ListLocalSessionsRequest {
+            offset: 0,
+            limit: 2,
+            cursor: first_page.payload.next_cursor.clone(),
         }));
         restore_codex_home(previous_codex_home);
 
@@ -7290,6 +7445,13 @@ mod tests {
         assert_eq!(second_page.payload.sessions[0].id, "t3");
         assert!(!second_page.payload.has_more);
         assert_eq!(second_page.payload.total_count, 3);
+        assert_eq!(keyset_page.payload.sessions.len(), 1);
+        assert_eq!(keyset_page.payload.sessions[0].id, "t3");
+        assert!(!keyset_page.payload.has_more);
+        assert_eq!(
+            keyset_page.payload.prev_cursor,
+            first_page.payload.next_cursor
+        );
     }
 
     #[test]

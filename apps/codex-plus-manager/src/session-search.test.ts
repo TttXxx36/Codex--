@@ -6,6 +6,7 @@ import {
   type SessionCursor,
   encodeSessionCursor,
   decodeSessionCursor,
+  toSessionCursorParam,
   searchLocalSessions,
   paginateSessionsKeyset,
   analyzeQueryPlan,
@@ -18,9 +19,26 @@ test('encodeSessionCursor and decodeSessionCursor roundtrip', () => {
   const decoded = decodeSessionCursor(encoded);
   assert.deepEqual(decoded, cursor);
 
+  const backendEncoded = Buffer.from(
+    JSON.stringify({ updatedAtMs: cursor.updatedAtMs, id: cursor.id }),
+    'utf8',
+  ).toString('base64url');
+  assert.deepEqual(decodeSessionCursor(backendEncoded), cursor);
+  assert.equal(toSessionCursorParam(backendEncoded), backendEncoded);
+
   // Invalid inputs
   assert.equal(decodeSessionCursor(''), null);
   assert.equal(decodeSessionCursor('invalid-base64!@#$'), null);
+});
+
+test('toSessionCursorParam normalizes object and opaque cursor inputs', () => {
+  const cursor: SessionCursor = { updatedAtMs: 1718000000000, id: 'session-xyz-123' };
+  const encoded = encodeSessionCursor(cursor);
+
+  assert.equal(toSessionCursorParam(cursor), encoded);
+  assert.equal(toSessionCursorParam(encoded), encoded);
+  assert.equal(toSessionCursorParam(null), undefined);
+  assert.equal(toSessionCursorParam('invalid-base64!@#$'), undefined);
 });
 
 test('searchLocalSessions filters by status and scores matches by relevance', () => {
@@ -139,7 +157,9 @@ test('SQLite query plan baseline asserts covering index and eliminates temp B-Tr
   const querySql = `
     SELECT id, title, cwd, model_provider, archived, updated_at_ms, rollout_path
     FROM threads
-    WHERE NOT EXISTS (SELECT 1 FROM thread_spawn_edges e WHERE e.child_thread_id = threads.id)
+    WHERE (COALESCE(updated_at_ms, 0) < 1700000000000
+      OR (COALESCE(updated_at_ms, 0) = 1700000000000 AND id < 'thread-cursor'))
+      AND NOT EXISTS (SELECT 1 FROM thread_spawn_edges e WHERE e.child_thread_id = threads.id)
     ORDER BY COALESCE(updated_at_ms, 0) DESC, id DESC
     LIMIT 50
   `;
@@ -153,7 +173,16 @@ test('SQLite query plan baseline asserts covering index and eliminates temp B-Tr
 
   // 2. Apply covering index and subquery index
   db.exec(`
-    CREATE INDEX idx_threads_updated_at_id ON threads (COALESCE(updated_at_ms, 0) DESC, id DESC);
+    CREATE INDEX idx_threads_updated_at_id ON threads (
+      COALESCE(updated_at_ms, 0) DESC,
+      id DESC,
+      title,
+      cwd,
+      model_provider,
+      archived,
+      updated_at_ms,
+      rollout_path
+    );
     CREATE INDEX idx_thread_spawn_edges_child ON thread_spawn_edges (child_thread_id);
   `);
 
@@ -162,6 +191,7 @@ test('SQLite query plan baseline asserts covering index and eliminates temp B-Tr
   const indexedAnalysis = analyzeQueryPlan(indexedPlan);
   assert.equal(indexedAnalysis.hasTempBTreeSort, false, 'Temporary B-Tree sort must be eliminated');
   assert.equal(indexedAnalysis.usesIndex, true, 'Must use covering index');
+  assert.equal(indexedAnalysis.usesCoveringIndex, true, 'Must use a covering index');
   assert.equal(indexedAnalysis.hasTableScan, false, 'Full table scan must be eliminated');
   assert.equal(indexedAnalysis.isOptimal, true);
 });
@@ -178,7 +208,16 @@ test('synthetic 10,000 sessions query benchmark executes in < 15ms with covering
       updated_at_ms INTEGER,
       rollout_path TEXT
     );
-    CREATE INDEX idx_threads_updated_at_id ON threads (COALESCE(updated_at_ms, 0) DESC, id DESC);
+    CREATE INDEX idx_threads_updated_at_id ON threads (
+      COALESCE(updated_at_ms, 0) DESC,
+      id DESC,
+      title,
+      cwd,
+      model_provider,
+      archived,
+      updated_at_ms,
+      rollout_path
+    );
   `);
 
   // Insert 10,000 synthetic rows in a single transaction
@@ -204,6 +243,8 @@ test('synthetic 10,000 sessions query benchmark executes in < 15ms with covering
   const queryStmt = db.prepare(`
     SELECT id, title, cwd, model_provider, archived, updated_at_ms, rollout_path
     FROM threads
+    WHERE (COALESCE(updated_at_ms, 0) < 1700005000000
+      OR (COALESCE(updated_at_ms, 0) = 1700005000000 AND id < 'thread-cursor'))
     ORDER BY COALESCE(updated_at_ms, 0) DESC, id DESC
     LIMIT 50
   `);
