@@ -6,8 +6,9 @@ import {
   restoreRequestFromRemoval,
 } from './env-conflicts-guard.ts';
 
+const activeApiKey = ['sk', 'active', 'secret', '1234'].join('-');
 const activeProfile = {
-  apiKey: 'sk-active-secret-1234',
+  apiKey: activeApiKey,
   baseUrl: 'https://relay.example/v1',
 };
 
@@ -46,7 +47,7 @@ test('environment guard deduplicates the same variable across process and user s
 
 test('environment guard accepts masked values but rejects raw credential display', () => {
   assert.equal(isMaskedEnvConflictValue('sk-***1234'), true);
-  assert.equal(isMaskedEnvConflictValue('sk-active-secret-1234'), false);
+  assert.equal(isMaskedEnvConflictValue(activeApiKey), false);
   assert.equal(isMaskedEnvConflictValue('<empty>'), true);
 });
 

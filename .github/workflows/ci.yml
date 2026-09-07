@@ -1,0 +1,79 @@
+name: CI quality gates
+
+on:
+  push:
+    branches:
+      - Gemini
+      - Codex
+      - main
+  pull_request:
+    branches:
+      - Gemini
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-check:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/codex-plus-manager
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/codex-plus-manager/package-lock.json
+
+      - name: Install locked frontend dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npm run check
+
+      - name: Build frontend
+        run: npm run vite:build
+
+      - name: Run frontend tests and leak gate
+        run: npm test
+
+  rust-core-check:
+    name: Rust workspace checks (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Cargo workspace check
+        run: cargo check --workspace --locked
+
+      - name: Cargo workspace tests
+        run: cargo test --workspace --locked
+
+      - name: Compile Windows workspace artifacts
+        run: cargo build --workspace --locked

@@ -202,18 +202,24 @@ test("Smoke 3: Helper restart and graceful shutdown lifecycle contracts", () => 
 });
 
 test("Smoke 4: Redacted diagnostics on error without credential leaks", () => {
+  const rawBearer = [
+    "Bearer",
+    ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJzdWIiOiIxMjM0NTY3ODkwIn0"].join("."),
+  ].join(" ");
+  const projectKey = ["sk", "proj", "superSecretKey1234567890abcdef12345"].join("-");
+  const liveKey = ["sk", "live", "9876543210abcdef"].join("-");
   const rawCrashLog = `
     [ERROR] Connection to upstream failed: 401 Unauthorized
-    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0
-    API Key: sk-proj-superSecretKey1234567890abcdef12345
-    Alternative key: sk-live9876543210abcdef
+    Authorization: ${rawBearer}
+    API Key: ${projectKey}
+    Alternative key: ${liveKey}
     Request URL: http://127.0.0.1:57321/v1/responses
   `;
 
   const sanitized = sanitizeTraceLog(rawCrashLog);
 
-  assert.ok(!sanitized.includes("sk-proj-superSecretKey1234567890abcdef12345"), "Must redact sk-proj token");
-  assert.ok(!sanitized.includes("sk-live9876543210abcdef"), "Must redact sk-live token");
+  assert.ok(!sanitized.includes(projectKey), "Must redact sk-proj token");
+  assert.ok(!sanitized.includes(liveKey), "Must redact sk-live token");
   assert.ok(!sanitized.includes("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"), "Must redact raw Bearer JWT");
   assert.ok(sanitized.includes("Authorization: Bearer [REDACTED]"), "Must redact Bearer header");
   assert.ok(sanitized.includes("sk-***"), "Must replace token with mask");

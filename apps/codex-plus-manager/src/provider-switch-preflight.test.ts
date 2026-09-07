@@ -8,10 +8,12 @@ import {
   rollbackSnapshotFromUndoResult,
 } from './provider-switch-preflight.ts';
 
+const syntheticKey = (scope: string, value: string) => ['sk', scope, value].join('-');
+
 test('maskCredential protects sensitive API keys', () => {
   assert.equal(maskCredential(''), '(未配置)');
   assert.equal(maskCredential('12345'), '********');
-  assert.equal(maskCredential('sk-proj-1234567890abcdef'), 'sk-****def');
+  assert.equal(maskCredential(syntheticKey('proj', '1234567890abcdef')), 'sk-****def');
 });
 
 test('computeProviderSwitchPreflight returns empty diff for identical profile', () => {
@@ -37,7 +39,7 @@ test('computeProviderSwitchPreflight detects endpoint, model, protocol and auth 
     model: 'gpt-4o',
     protocol: 'responses',
     relayMode: 'pureApi',
-    apiKey: 'sk-source-12345678',
+    apiKey: syntheticKey('source', '12345678'),
     sub2apiEnabled: false,
   };
 
@@ -48,7 +50,7 @@ test('computeProviderSwitchPreflight detects endpoint, model, protocol and auth 
     model: 'deepseek-chat',
     protocol: 'chat',
     relayMode: 'pureApi',
-    apiKey: 'sk-target-87654321',
+    apiKey: syntheticKey('target', '87654321'),
     sub2apiEnabled: true,
   };
 
@@ -71,8 +73,8 @@ test('computeProviderSwitchPreflight detects endpoint, model, protocol and auth 
   assert.ok(authDiff);
   assert.ok(authDiff.oldValue.includes('****'));
   assert.ok(authDiff.newValue.includes('****'));
-  assert.equal(authDiff.oldValue.includes('sk-source-12345678'), false);
-  assert.equal(authDiff.newValue.includes('sk-target-87654321'), false);
+  assert.equal(authDiff.oldValue.includes(syntheticKey('source', '12345678')), false);
+  assert.equal(authDiff.newValue.includes(syntheticKey('target', '87654321')), false);
 });
 
 test('provider preflight compares live-impact fields without exposing raw credentials', () => {

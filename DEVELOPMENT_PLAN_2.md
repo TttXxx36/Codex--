@@ -259,10 +259,18 @@ graph TD
     - 完整编译构建生成 Windows 安装包与各端产物。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  - *（待任务实施后登记具体文件修改、核心逻辑改造与提交 commit）*
+  - `.github/workflows/ci.yml`：新增最小外环质量门禁；仅在 `Gemini` / `Codex` / `main` push 及目标分支为 `Gemini` 的 PR 触发，使用 `contents: read` 权限。
+  - `frontend-check`：在 `ubuntu-latest` 使用 Node.js 22、`actions/setup-node` 的 npm 缓存与 manager lockfile，严格执行 `npm ci`、`npm run check`、`npm run vite:build`、`npm test`。
+  - `rust-core-check`：在 `windows-latest` 使用 `dtolnay/rust-toolchain@stable` 与 Cargo registry/build 缓存，执行 `cargo fmt --check`、`cargo check --workspace --locked`、`cargo test --workspace --locked` 及 workspace 编译校验。
+  - `apps/codex-plus-manager/src/security-guard.test.ts`：新增被现有 `src/*.test.ts` glob 自动发现的纯 Node.js 脱敏门禁，扫描 `src` 与存在时的 `dist` 文本产物，阻断 Bearer、`sk-` 与凭据赋值形状。
+  - `request-diagnostics.test.ts`、`launcher-smoke.test.ts`、`provider-switch-preflight.test.ts`、`env-conflicts-guard.test.ts`、`relay-live-files.test.ts`、`code-highlight.test.ts`：将脱敏测试中的合成凭据改为运行时拼接，避免测试源码自身携带可扫描的明文 key 形状，同时保持原有行为断言。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - *（待任务验证后登记客观测试命令、通过指标与失败路径覆盖断言）*
+  - `apps/codex-plus-manager`：`npm test` 通过 **199/199**（0 failure；包含新增的源码/产物敏感字段门禁）。【T】
+  - 定向回归：新增门禁及相关脱敏/Smoke 文件 **36/36 passed**。【T】
+  - `git diff --check` 通过；当前基线仍为 `Gemini@6642e1a`，未提交、未推送。【S/T 辅助检查】
+  - 本地 `npm run check` 与 `npm run vite:build` 均因当前工作树未安装 manager 的 `tsc` / `vite` CLI 退出；Rust `cargo` / `rustc` 亦不可用。因此 TypeScript、Vite、Rust 编译/测试、Windows 产物与 GitHub Actions 实际运行均标记为 **未验证**，不能以本地静态检查冒充 CI/D 级证据。
+  - Workflow 结构已按 GitHub Actions 官方语法、现有仓库 action 版本与真实脚本/锁文件逐项复核；本环境没有 `actionlint`、YAML 解析器或远程 CI 执行能力，故未宣称 actionlint/云端通过。
 
 ---
 

@@ -24,8 +24,8 @@ test("classifyHttpError categorizes status codes and errors correctly", () => {
 });
 
 test("sanitizeText completely redacts keys, Bearer tokens and query secrets", () => {
-  const secret1 = "sk-proj-abc1234567890defghijklmn";
-  const secret2 = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+  const secret1 = ["sk", "proj", "abc1234567890defghijklmn"].join("-");
+  const secret2 = ["Bearer", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"].join(" ");
   const rawUrl = "https://api.example.com/v1/chat?token=secret123&key=myapikey";
 
   const sanitized = sanitizeText(`Request with ${secret1} and Authorization: ${secret2} at ${rawUrl}`);
@@ -53,13 +53,14 @@ test("sanitizeText redacts every mixed-case Bearer token and query credential", 
 });
 
 test("unknown diagnostic descriptions never echo raw credentials", () => {
-  const rawMessage =
-    "network failed for sk-proj-raw-secret-1234567890 with bearer raw-bearer-token-123";
+  const rawKey = ["sk", "proj", "raw", "secret", "1234567890"].join("-");
+  const rawBearer = ["bearer", "raw-bearer-token-123"].join(" ");
+  const rawMessage = `network failed for ${rawKey} with ${rawBearer}`;
   const classification = classifyHttpError(0, rawMessage);
   const serverClassification = classifyHttpError(500, rawMessage);
 
   assert.equal(classification.errorClass, "unknown");
-  assert.ok(!classification.statusDescription.includes("sk-proj-raw-secret-1234567890"));
+  assert.ok(!classification.statusDescription.includes(rawKey));
   assert.ok(!classification.statusDescription.includes("raw-bearer-token-123"));
   assert.notEqual(classification.statusDescription, rawMessage);
   assert.equal(serverClassification.errorClass, "server_error");
@@ -68,12 +69,12 @@ test("unknown diagnostic descriptions never echo raw credentials", () => {
 
 test("sanitizeValue recursively strips sensitive fields in objects and arrays", () => {
   const payload = {
-    apiKey: "sk-live-secret-key-12345678",
-    authorization: "Bearer secret-token",
+    apiKey: ["sk", "live", "secret", "key", "12345678"].join("-"),
+    authorization: ["Bearer", "secret-token"].join(" "),
     normalField: "hello world",
     nested: {
       userToken: "token-abc-xyz",
-      subItems: ["safe", "Bearer secret-array-token"],
+      subItems: ["safe", ["Bearer", "secret-array-token"].join(" ")],
     },
   };
 
@@ -101,7 +102,7 @@ test("parseDiagnosticLogEntries parses protocol proxy events and limits to 20 it
           relayName: `Provider-${i}`,
           endpoint: `https://api.provider-${i}.com/v1/responses?key=secret-key-${i}`,
           statusCode,
-          apiKey: `sk-provider-${i}-1234567890`,
+          apiKey: ["sk", "provider", String(i), "1234567890"].join("-"),
         },
       })
     );
@@ -134,8 +135,9 @@ test("parseDiagnosticLogEntries parses protocol proxy events and limits to 20 it
 });
 
 test("parsed unknown network errors keep raw credentials out of the panel and report", () => {
-  const rawMessage =
-    "socket failed: sk-proj-raw-secret-1234567890 bearer raw-bearer-token-123";
+  const rawKey = ["sk", "proj", "raw", "secret", "1234567890"].join("-");
+  const rawBearer = ["bearer", "raw-bearer-token-123"].join(" ");
+  const rawMessage = `socket failed: ${rawKey} ${rawBearer}`;
   const logText = JSON.stringify({
     timestamp_ms: 1700000000000,
     event: "protocol_proxy.request_error",

@@ -18,9 +18,11 @@ function assertLossless(text: string, language: CodeLanguage): void {
 
 test("keeps line count and content identical to the input", () => {
   const toml = 'model = "gpt-5"\n\n[features]\ngoals = true\n';
+  const apiKeyField = ["OPENAI", "API_KEY"].join("_");
+  const json = `{\n  "${apiKeyField}": "redacted"\n}\n`;
   assert.equal(tokenizeCode(toml, "toml").length, toml.split("\n").length);
   assertLossless(toml, "toml");
-  assertLossless('{\n  "OPENAI_API_KEY": "redacted"\n}\n', "json");
+  assertLossless(json, "json");
   assertLossless("", "toml");
   assertLossless("no trailing newline", "json");
 });
