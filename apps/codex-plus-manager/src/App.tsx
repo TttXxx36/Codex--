@@ -113,6 +113,12 @@ import { relayAuthForLiveDraft, shouldBackfillRelayProfileBeforeSwitch } from ".
 import { resolveProviderSyncCompletion } from "./provider-sync-flow";
 import { resolveLaunchStatus } from "./launch-status";
 import {
+  getActionableEnvConflicts,
+  restoreRequestFromRemoval,
+  type EnvConflict as GuardEnvConflict,
+  type EnvConflictProfile,
+} from "./env-conflicts-guard";
+import {
   defaultDreamSkinTheme,
   defaultDreamSkinColors,
   isDreamSkinDraftDirty,
@@ -641,11 +647,7 @@ type PendingProviderImportResult = CommandResult<{
   pending: ProviderImportRequest | null;
 }>;
 
-type EnvConflict = {
-  name: string;
-  source: "process" | "user" | string;
-  valuePresent: boolean;
-};
+type EnvConflict = GuardEnvConflict;
 
 type EnvConflictsResult = CommandResult<{
   conflicts: EnvConflict[];
@@ -675,7 +677,13 @@ type RemoveEnvConflictsResult = CommandResult<{
     removedUser: boolean;
   }>;
   backupPath: string | null;
+  undo: { backupPath: string; createdAtMs: number } | null;
   remaining: EnvConflict[];
+}>;
+
+type RestoreEnvConflictsResult = CommandResult<{
+  restored: number;
+  backupPath: string;
 }>;
 
 type ProviderSyncPayload = {
@@ -1053,6 +1061,7 @@ export function App() {
   const [relay, setRelay] = useState<RelayResult | null>(null);
   const [relayFiles, setRelayFiles] = useState<RelayFilesResult | null>(null);
   const [envConflicts, setEnvConflicts] = useState<EnvConflictsResult | null>(null);
+  const [envConflictBackupPath, setEnvConflictBackupPath] = useState<string | null>(null);
   const [relayEnvironment, setRelayEnvironment] = useState<RelayEnvironmentResult | null>(null);
   const [ccsProviders, setCcsProviders] = useState<CcsProvidersResult | null>(null);
   const [pendingProviderImport, setPendingProviderImport] = useState<ProviderImportRequest | null>(null);
@@ -1310,7 +1319,22 @@ export function App() {
         message: result.message,
         conflicts: result.remaining,
       });
+      setEnvConflictBackupPath(restoreRequestFromRemoval(result)?.backupPath ?? null);
       showNotice(t("环境变量清理"), result.message, result.status);
+    }
+  };
+
+  const restoreEnvConflicts = async () => {
+    const request = envConflictBackupPath ? { backupPath: envConflictBackupPath } : null;
+    if (!request) return;
+    const result = await run(() =>
+      call<RestoreEnvConflictsResult>("restore_env_conflicts", request),
+    );
+    if (!result) return;
+    showNotice(t("环境变量恢复"), result.message, result.status);
+    if (isSuccessStatus(result.status)) {
+      setEnvConflictBackupPath(null);
+      await refreshEnvConflicts(true);
     }
   };
 
@@ -3310,6 +3334,7 @@ export function App() {
       refreshEnvConflicts,
       refreshRelayEnvironment,
       removeEnvConflicts,
+      restoreEnvConflicts,
       refreshCcsProviders,
       importCcsProviders,
       refreshLiveContextEntries,
@@ -3371,7 +3396,7 @@ export function App() {
       disableWatcher: () => watcherAction("disable_watcher"),
       toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
     }),
-    [route, launchForm, settingsForm, settings, overview, removeOwnedData, update, updateInstallProgress.active, logs, diagnostics, theme, relayFiles, localSessions, sessionShareUrl, importSessionUrl, zedRemoteProjects, selectedProviderSyncTarget, envConflicts, relayEnvironment, ccsProviders, dreamSkinLibrary, dreamSkinMarket, dreamSkinCommunity, selectedDreamSkinTheme, savedDreamSkinThemeDraft, dreamSkinThemeDraft, dreamSkinDraftDirty, pendingDreamSkinRestart],
+    [route, launchForm, settingsForm, settings, overview, removeOwnedData, update, updateInstallProgress.active, logs, diagnostics, theme, relayFiles, localSessions, sessionShareUrl, importSessionUrl, zedRemoteProjects, selectedProviderSyncTarget, envConflicts, envConflictBackupPath, relayEnvironment, ccsProviders, dreamSkinLibrary, dreamSkinMarket, dreamSkinCommunity, selectedDreamSkinTheme, savedDreamSkinThemeDraft, dreamSkinThemeDraft, dreamSkinDraftDirty, pendingDreamSkinRestart],
   );
   const hasUpdate = update?.updateAvailable === true;
 
@@ -3507,6 +3532,7 @@ export function App() {
               settings={settings}
               relayFiles={relayFiles}
               envConflicts={envConflicts}
+              envConflictBackupPath={envConflictBackupPath}
               ccsProviders={ccsProviders}
               form={settingsForm}
               actions={actions}
@@ -3755,6 +3781,7 @@ type Actions = {
   refreshEnvConflicts: (silent?: boolean) => Promise<EnvConflictsResult | null>;
   refreshRelayEnvironment: (silent?: boolean) => Promise<RelayEnvironmentResult | null>;
   removeEnvConflicts: (names: string[]) => Promise<void>;
+  restoreEnvConflicts: () => Promise<void>;
   refreshCcsProviders: (silent?: boolean) => Promise<CcsProvidersResult | null>;
   importCcsProviders: () => Promise<void>;
   refreshLiveContextEntries: () => Promise<LiveContextEntriesResult | null>;
@@ -4415,6 +4442,7 @@ const RelayScreen = memo(function RelayScreen({
   settings: _settings,
   relayFiles,
   envConflicts,
+  envConflictBackupPath,
   ccsProviders,
   form,
   actions,
@@ -4422,6 +4450,7 @@ const RelayScreen = memo(function RelayScreen({
   settings: SettingsResult | null;
   relayFiles: RelayFilesResult | null;
   envConflicts: EnvConflictsResult | null;
+  envConflictBackupPath: string | null;
   ccsProviders: CcsProvidersResult | null;
   form: BackendSettings;
   actions: Actions;
@@ -4544,7 +4573,12 @@ const RelayScreen = memo(function RelayScreen({
       <Panel>
         <CardHead title={t("供应商列表")} detail={tf("{0} 个供应商配置；可拖动排序，点编辑进入详情", [normalized.relayProfiles.length])} />
         <CardContent>
-          <EnvConflictNotice envConflicts={envConflicts} actions={actions} />
+          <EnvConflictNotice
+            activeProfile={activeRelayProfile(normalized)}
+            backupPath={envConflictBackupPath}
+            envConflicts={envConflicts}
+            actions={actions}
+          />
           <label className="switch-row relay-master-switch">
             <input
               checked={normalized.relayProfilesEnabled}
@@ -4726,14 +4760,18 @@ const RelayScreen = memo(function RelayScreen({
 });
 
 function EnvConflictNotice({
+  activeProfile,
+  backupPath,
   envConflicts,
   actions,
 }: {
+  activeProfile: EnvConflictProfile;
+  backupPath: string | null;
   envConflicts: EnvConflictsResult | null;
   actions: Actions;
 }) {
-  const conflicts = envConflicts?.conflicts ?? [];
-  if (!conflicts.length) return null;
+  const conflicts = getActionableEnvConflicts(activeProfile, envConflicts?.conflicts ?? []);
+  if (!conflicts.length && !backupPath) return null;
   const names = Array.from(new Set(conflicts.map((conflict) => conflict.name))).sort();
   return (
     <div className="env-conflict-notice">
@@ -4741,22 +4779,36 @@ function EnvConflictNotice({
         <ShieldAlert className="h-4 w-4" />
       </div>
       <div className="env-conflict-body">
-        <strong>{t("检测到 OPENAI 环境变量")}</strong>
-        <p>{t("这些变量可能覆盖当前供应商写入的 config.toml / auth.json；CODEX_HOME 不会被清理。")}</p>
-        <div className="env-conflict-tags">
-          {conflicts.map((conflict) => (
-            <span key={`${conflict.source}-${conflict.name}`}>
-              {conflict.name}
-              <small>{envConflictSourceLabel(conflict.source)}</small>
-            </span>
-          ))}
-        </div>
+        <strong>{conflicts.length ? t("检测到与当前供应商不一致的环境变量") : t("环境变量清理已完成")}</strong>
+        <p>
+          {conflicts.length
+            ? t("仅值级不一致的核心变量需要处理；已与当前供应商一致的变量不会提示或删除。")
+            : t("删除前的本地备份仍可用于恢复，不会在界面展示原始凭证。")}
+        </p>
+        {conflicts.length ? (
+          <div className="env-conflict-tags">
+            {conflicts.map((conflict) => (
+              <span key={`${conflict.source}-${conflict.name}`}>
+                {conflict.name}
+                <small>{envConflictSourceLabel(conflict.source)}</small>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="env-conflict-actions">
-        <Button onClick={() => void actions.removeEnvConflicts(names)} size="sm">
-          <Trash2 className="h-4 w-4" />
-          {t("删除")}
-        </Button>
+        {conflicts.length ? (
+          <Button onClick={() => void actions.removeEnvConflicts(names)} size="sm">
+            <Trash2 className="h-4 w-4" />
+            {t("删除")}
+          </Button>
+        ) : null}
+        {backupPath ? (
+          <Button onClick={() => void actions.restoreEnvConflicts()} size="sm" variant="secondary">
+            <RotateCcw className="h-4 w-4" />
+            {t("恢复")}
+          </Button>
+        ) : null}
         <Button onClick={() => void actions.refreshEnvConflicts(false)} size="sm" variant="secondary">
           <RefreshCw className="h-4 w-4" />
           {t("检测")}

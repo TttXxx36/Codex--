@@ -387,7 +387,15 @@ pub struct RemoveEnvConflictsRequest {
 pub struct RemoveEnvConflictsPayload {
     pub removed: Vec<codex_plus_core::env_conflicts::EnvConflictRemoval>,
     pub backup_path: Option<String>,
+    pub undo: Option<codex_plus_core::env_conflicts::EnvConflictUndo>,
     pub remaining: Vec<codex_plus_core::env_conflicts::EnvConflict>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreEnvConflictsPayload {
+    pub restored: usize,
+    pub backup_path: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -4082,11 +4090,18 @@ pub fn read_relay_files() -> CommandResult<RelayFilesPayload> {
 
 #[tauri::command]
 pub fn check_env_conflicts() -> CommandResult<EnvConflictsPayload> {
-    let conflicts = codex_plus_core::env_conflicts::detect_env_conflicts();
+    let profile = SettingsStore::default().load().unwrap_or_default().active_relay_profile();
+    let active_key = (!profile.api_key.trim().is_empty()).then_some(profile.api_key.as_str());
+    let active_base_url =
+        (!profile.base_url.trim().is_empty()).then_some(profile.base_url.as_str());
+    let conflicts = codex_plus_core::env_conflicts::detect_env_conflicts_against_profile(
+        active_key,
+        active_base_url,
+    );
     let message = if conflicts.is_empty() {
         "未检测到会覆盖 Codex 供应商配置的 OPENAI 环境变量。"
     } else {
-        "检测到可能覆盖 Codex 供应商配置的 OPENAI 环境变量。"
+        "已完成 OPENAI 环境变量值级归属检测。"
     };
     ok(message, EnvConflictsPayload { conflicts })
 }
@@ -4106,15 +4121,28 @@ pub fn check_relay_environment() -> CommandResult<RelayEnvironmentReport> {
 pub fn remove_env_conflicts(
     request: RemoveEnvConflictsRequest,
 ) -> CommandResult<RemoveEnvConflictsPayload> {
+    let profile = SettingsStore::default().load().unwrap_or_default().active_relay_profile();
+    let active_key = (!profile.api_key.trim().is_empty()).then_some(profile.api_key.as_str());
+    let active_base_url =
+        (!profile.base_url.trim().is_empty()).then_some(profile.base_url.as_str());
     let backup_dir = codex_plus_core::paths::default_app_state_dir().join("backups");
-    match codex_plus_core::env_conflicts::remove_env_conflicts(&request.names, backup_dir) {
+    match codex_plus_core::env_conflicts::remove_env_conflicts_against_profile(
+        &request.names,
+        active_key,
+        active_base_url,
+        backup_dir,
+    ) {
         Ok(result) => {
-            let remaining = codex_plus_core::env_conflicts::detect_env_conflicts();
+            let remaining = codex_plus_core::env_conflicts::detect_env_conflicts_against_profile(
+                active_key,
+                active_base_url,
+            );
             ok(
                 "环境变量已按确认项删除；重新启动 Codex 后生效。",
                 RemoveEnvConflictsPayload {
                     removed: result.removed,
                     backup_path: result.backup_path,
+                    undo: result.undo,
                     remaining,
                 },
             )
@@ -4124,10 +4152,70 @@ pub fn remove_env_conflicts(
             RemoveEnvConflictsPayload {
                 removed: Vec::new(),
                 backup_path: None,
-                remaining: codex_plus_core::env_conflicts::detect_env_conflicts(),
+                undo: None,
+                remaining: codex_plus_core::env_conflicts::detect_env_conflicts_against_profile(
+                    active_key,
+                    active_base_url,
+                ),
             },
         ),
     }
+}
+
+#[tauri::command]
+pub fn restore_env_conflicts(
+    backup_path: String,
+) -> CommandResult<RestoreEnvConflictsPayload> {
+    let backup_path = backup_path.trim();
+    if backup_path.is_empty() {
+        return failed(
+            "环境变量恢复凭证为空，未执行恢复。",
+            RestoreEnvConflictsPayload {
+                restored: 0,
+                backup_path: String::new(),
+            },
+        );
+    }
+    let requested_path = backup_path.to_string();
+    match managed_env_conflict_backup_path(backup_path)
+        .and_then(|path| codex_plus_core::env_conflicts::restore_env_conflicts(&path))
+    {
+        Ok(restored) => ok(
+            "环境变量已从本地备份恢复。",
+            RestoreEnvConflictsPayload {
+                restored,
+                backup_path: requested_path,
+            },
+        ),
+        Err(error) => failed(
+            &format!("恢复环境变量失败：{error}"),
+            RestoreEnvConflictsPayload {
+                restored: 0,
+                backup_path: requested_path,
+            },
+        ),
+    }
+}
+
+fn managed_env_conflict_backup_path(input: &str) -> anyhow::Result<PathBuf> {
+    let backup_dir = codex_plus_core::paths::default_app_state_dir().join("backups");
+    let canonical_dir = backup_dir
+        .canonicalize()
+        .map_err(|error| anyhow::anyhow!("无法定位环境变量备份目录：{error}"))?;
+    let canonical_path = Path::new(input)
+        .canonicalize()
+        .map_err(|error| anyhow::anyhow!("无法定位环境变量备份文件：{error}"))?;
+    if canonical_path.parent() != Some(canonical_dir.as_path()) {
+        anyhow::bail!("环境变量备份路径不属于应用管理的备份目录");
+    }
+    let file_name = canonical_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if !file_name.starts_with("env-conflicts-") || !file_name.ends_with(".json") {
+        anyhow::bail!("环境变量备份文件名无效");
+    }
+    Ok(canonical_path)
 }
 
 #[tauri::command]
@@ -6982,7 +7070,7 @@ mod tests {
     #[test]
     fn env_conflict_commands_ignore_codex_home_and_remove_openai_vars() {
         let _codex_home_guard = lock_codex_home_for_test();
-        let test_openai_name = "OPENAI_CODEX_PLUS_ENV_CONFLICT_TEST";
+        let test_openai_name = "OPENAI_API_KEY";
         let previous_openai = std::env::var_os(test_openai_name);
         let previous_codex_home = std::env::var_os("CODEX_HOME");
         let temp = tempfile::tempdir().unwrap();

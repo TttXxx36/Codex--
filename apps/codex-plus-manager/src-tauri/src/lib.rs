@@ -161,6 +161,7 @@ pub fn run() {
             commands::check_env_conflicts,
             commands::check_relay_environment,
             commands::remove_env_conflicts,
+            commands::restore_env_conflicts,
             commands::save_relay_file,
             commands::write_diagnostic_event,
             commands::backfill_relay_profile_from_live,

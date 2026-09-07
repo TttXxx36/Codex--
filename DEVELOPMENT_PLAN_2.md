@@ -142,10 +142,16 @@ graph TD
     - 备份落盘与逆向一键还原往返一致性测试。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  - *（待任务实施后登记具体文件修改、核心逻辑改造与提交 commit）*
+  - `crates/codex-plus-core/src/env_conflicts.rs`：将环境变量匹配从 `OPENAI_` 前缀收敛为影响 Codex 请求的显式白名单；新增 `Aligned` / `Divergent` / `External` 值级状态、进程/用户来源保留、当前值与期望值掩码字段，并以 active profile 的 API key / Base URL 进行比较；空字符串保持 `<empty>` 掩码且不标记为 `valuePresent`。
+  - `crates/codex-plus-core/src/env_conflicts.rs`、`crates/codex-plus-core/tests/env_conflicts.rs`：删除路径仅接受值级 `Divergent` 项；备份使用原子写入并返回持久化 `EnvConflictUndo` 元数据；恢复前校验变量名白名单，补齐一致、分歧、空值、掩码和备份还原集成测试。
+  - `apps/codex-plus-manager/src-tauri/src/commands.rs`、`src-tauri/src/lib.rs`：`check_env_conflicts` / `remove_env_conflicts` 接入当前 profile，正式注册恢复命令，并以结构化 `RestoreEnvConflictsPayload` 返回恢复计数与备份路径；删除响应仅返回掩码冲突、删除结果和本地撤销路径；恢复命令拒绝应用备份目录之外的路径。
+  - `apps/codex-plus-manager/src/env-conflicts-guard.ts`、`env-conflicts-guard.test.ts`、`src/App.tsx`：新增纯逻辑守卫，过滤 `Aligned` / 未配置 `External`、按变量名去重、校验掩码标记并消费备份恢复契约；Manager 增加一键恢复入口，恢复动作只提交后端返回的备份路径。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - *（待任务验证后登记客观测试命令、通过指标与失败路径覆盖断言）*
+  - `apps/codex-plus-manager`：`npm test` 通过 **195/195**（0 failure，较 BUG-010 基线 191 项新增 4 项 BUG-009 契约测试）。【T】
+  - `git diff --check` 通过。【S/T 辅助检查】
+  - `npm run check` 未完成：当前环境没有可执行的 `tsc`；`cargo test -p codex-plus-core --test env_conflicts` 未完成：当前环境没有 `cargo`。因此 Rust 编译、Rust 集成测试、TypeScript 类型检查、桌面端 E2E 仍标记为 **未验证**，未将静态审计冒充为通过。
+  - 安全边界：源码、命令 payload、Manager 展示均不返回完整环境变量值；本地备份仅用于恢复，测试与诊断输出不打印备份内容。当前未提交、未推送。
 
 ---
 
