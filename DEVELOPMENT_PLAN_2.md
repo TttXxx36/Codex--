@@ -291,13 +291,17 @@ graph TD
   - 建立 apps/codex-plus-manager/src/views/ 目录，并将 OverviewScreen 与其健康检查渲染逻辑迁移到 OverviewScreen.tsx；组件只接收概览数据、插件市场进度和 5 个页面动作回调。
   - 将 Panel、CardHead、Toolbar、Badge、LatestLaunch、Metric 以及进度/时间格式化逻辑迁移到 ScreenPrimitives.tsx，供现有页面复用，避免首批拆分产生重复渲染实现。
   - App.tsx 在模块顶层通过 lazy(() => import("./views/OverviewScreen")) 接入 OverviewScreen，保留原有 route 条件、Suspense 加载态和 actions 状态绑定；同步更新 app-decoupling.test.ts，锁定真实动态导入与默认导出契约。
+  - 第二阶段将会话历史列表、搜索/状态筛选、分页、批量删除、文件/本地分享链接导入相关渲染迁移到 `views/SessionsScreen.tsx`；通过 `SessionsScreenProps` 只接收页面数据、设置字段和最小 actions 契约，保留既有 keyset 分页参数与状态驱动行为，不新增会话业务逻辑。
+  - 第二阶段将日志列表、清理/复制操作、协议代理请求诊断看板、错误筛选和脱敏报告预览迁移到 `views/DiagnosticsScreen.tsx`；AboutScreen 仅接收 lazy view，App.tsx 不再保留日志/诊断巨型 JSX。
+  - 将既有 `Field`、自定义 `AppSelect` 和 `ToggleVisual` 提升为 `views/ScreenPrimitives.tsx` 共享原子，避免抽离视图时复制 UI 控件；App.tsx 模块顶层新增 SessionsScreen 与 DiagnosticsScreen 的真实 lazy import，并继续复用同一 Suspense fallback。
+  - 在 `app-decoupling.test.ts` 扩展 Overview、Sessions、Diagnostics 三个 lazy view 的动态导入、文件、默认导出和路由接入契约；不新增测试文件，维持基线计数。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - App.tsx 从基线 11,881 行降至 11,683 行；首个页面视图已脱离 App.tsx，源码层确认存在顶层动态 import。【S】
+  - App.tsx 从第一阶段 11,683 行进一步降至 11,016 行（较原始 11,881 行减少 865 行）；SessionsScreen、DiagnosticsScreen 已脱离 App.tsx，源码层确认三者均存在模块顶层动态 import。【S】
   - apps/codex-plus-manager：npm test 通过 199/199，0 failure；定向 app-decoupling.test.ts 通过 2/2。【T】
   - git diff --check 通过。【S/T 辅助检查】
   - npm run check 与 npm run vite:build 均因当前环境缺少 tsc/vite 可执行文件退出；因此 TypeScript 类型检查、Vite 实际异步 chunk、主 bundle 体积和桌面端 E2E 仍为未验证，不能把源码动态导入升级为 C/D 级构建或运行证据。
-  - 本阶段未提交、未推送；保留既有未跟踪任务记录和 DEVELOPMENT_PLAN_2_SIMPLIFIED.md 不变。后续 Screen 拆分与真实构建产物验证等待架构师审查。
+  - 第二阶段未修改 IPC、后端分页/删除/导入逻辑或状态管理；本阶段未提交、未推送。真实构建产物验证和架构师审查仍是后续门禁。
 
 ---
 

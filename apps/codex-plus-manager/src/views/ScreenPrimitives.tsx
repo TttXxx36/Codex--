@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { CheckCircle2, ChevronDown } from "lucide-react";
 
 import { UiBadge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { t } from "@/i18n";
 
 export type LaunchStatus = {
@@ -78,6 +80,96 @@ export function CardHead({ title, detail }: { title: string; detail: string }) {
 
 export function Toolbar({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={("toolbar " + className).trim()}>{children}</div>;
+}
+
+export function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <Label className={`field ${className}`}>
+      <span>{label}</span>
+      {children}
+    </Label>
+  );
+}
+
+export type AppSelectOption<T extends string> = {
+  value: T;
+  label: ReactNode;
+  disabled?: boolean;
+  title?: string;
+};
+
+export function AppSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  disabled = false,
+  className = "",
+  title = "",
+}: {
+  value: T;
+  options: AppSelectOption<T>[];
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  className?: string;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) || options[0];
+  const selectOption = (option: AppSelectOption<T>) => {
+    if (option.disabled) return;
+    onChange(option.value);
+    setOpen(false);
+  };
+  return (
+    <div
+      className={`app-select ${open ? "open" : ""} ${disabled ? "disabled" : ""} ${className}`.trim()}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <button
+        aria-expanded={open}
+        className="app-select-trigger"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        title={title}
+        type="button"
+      >
+        <span>{selected?.label ?? value}</span>
+        <ChevronDown className="h-4 w-4" />
+      </button>
+      {open && !disabled ? (
+        <div className="app-select-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              aria-selected={option.value === value}
+              className={`app-select-option ${option.value === value ? "selected" : ""}`}
+              disabled={option.disabled}
+              key={option.value}
+              onClick={() => selectOption(option)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                selectOption(option);
+              }}
+              title={option.title}
+              type="button"
+            >
+              {option.value === value ? <CheckCircle2 className="h-4 w-4" /> : <span className="app-select-option-spacer" />}
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ToggleVisual() {
+  return (
+    <span aria-hidden="true" className="toggle-switch-visual">
+      <span className="toggle-switch-thumb" />
+    </span>
+  );
 }
 
 function statusLabel(status: string) {
