@@ -16,10 +16,13 @@ test("calculateSpeedScore awards high score for low latency and zero for failure
   const fastScore = calculateSpeedScore(150, true, 80);
   const midScore = calculateSpeedScore(600, true, 400);
   const slowScore = calculateSpeedScore(2500, true, 1800);
+  const noTtftScore = calculateSpeedScore(150, true);
 
   assert.ok(fastScore >= 90, `fastScore should be >= 90, got ${fastScore}`);
   assert.ok(fastScore > midScore, "fastScore should exceed midScore");
   assert.ok(midScore > slowScore, "midScore should exceed slowScore");
+  assert.equal(noTtftScore, calculateSpeedScore(150, true, null));
+  assert.ok(noTtftScore < fastScore, "missing TTFT must not receive a fabricated bonus");
 });
 
 test("generateDecisionAdvice produces intelligent, explainable recommendations", () => {
@@ -81,6 +84,20 @@ test("generateDecisionAdvice produces intelligent, explainable recommendations",
   assert.equal(adviceKeep.fastestProfileId, "fast");
   assert.ok(adviceKeep.recommendation?.includes("即为最优节点"));
   assert.ok(adviceKeep.explanation.includes("无需切换"));
+
+  const redirect = generateDecisionAdvice([
+    {
+      profileId: "redirect",
+      profileName: "Redirect Node",
+      endpoint: "https://redirect.test",
+      httpStatus: 307,
+      latencyMs: 80,
+      status: "redirect",
+      score: 0,
+    },
+    ...results,
+  ]);
+  assert.ok(redirect.explanation.includes("供应商接口已重定向，请检查配置的目标 URL"));
 });
 
 test("runConcurrentSpeedMatrix tests profiles concurrently and isolates errors", async () => {
@@ -101,6 +118,9 @@ test("runConcurrentSpeedMatrix tests profiles concurrently and isolates errors",
       if (cand.id === "c2") {
         throw new Error("Connection timed out after 5000ms");
       }
+      if (cand.id === "c3") {
+        return { httpStatus: 307, latencyMs: 320 };
+      }
       return { httpStatus: 200, latencyMs: 320, ttftMs: 180 };
     },
     {
@@ -115,13 +135,17 @@ test("runConcurrentSpeedMatrix tests profiles concurrently and isolates errors",
   // Assert aggregate skipped: 3 tested out of 4 candidates
   assert.equal(summary.testedCount, 3);
   assert.equal(progressCount, 3);
-  assert.equal(summary.successCount, 2);
-  assert.equal(summary.failedCount, 1);
+  assert.equal(summary.successCount, 1);
+  assert.equal(summary.failedCount, 2);
 
   // Assert error isolation: c2 timeout did not fail the matrix
   const c2Res = summary.results.find((r) => r.profileId === "c2");
   assert.equal(c2Res?.status, "timeout");
   assert.equal(c2Res?.score, 0);
+  const c3Res = summary.results.find((r) => r.profileId === "c3");
+  assert.equal(c3Res?.status, "redirect");
+  assert.equal(c3Res?.ttftMs, undefined);
+  assert.equal(c3Res?.errorMessage, "供应商接口已重定向，请检查配置的目标 URL");
 
   // Assert fastest is c1
   assert.equal(summary.fastestProfileId, "c1");

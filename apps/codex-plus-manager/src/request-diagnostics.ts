@@ -1,3 +1,5 @@
+import { isRedirectStatus, REDIRECT_GUIDANCE } from "./http-errors.ts";
+
 export type ErrorCategory =
   | "auth"
   | "bad_request"
@@ -5,6 +7,7 @@ export type ErrorCategory =
   | "server_error"
   | "timeout"
   | "bridge"
+  | "redirect"
   | "unknown"
   | "none";
 
@@ -91,6 +94,16 @@ export function classifyHttpError(
       errorClassLabel: "正常",
       statusDescription: "请求已成功响应",
       remedyActionLabel: "运行正常",
+    };
+  }
+
+  if (isRedirectStatus(statusCode)) {
+    return {
+      errorClass: "redirect",
+      errorClassLabel: "接口已重定向 (3xx)",
+      statusDescription: REDIRECT_GUIDANCE,
+      remedyActionLabel: "检查供应商配置的目标 URL",
+      remedyTargetRoute: "relay",
     };
   }
 

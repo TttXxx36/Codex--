@@ -1,3 +1,10 @@
+import {
+  httpStatusGuidance,
+  isRedirectStatus,
+  isSuccessfulHttpStatus,
+  REDIRECT_GUIDANCE,
+} from "./http-errors.ts";
+
 export interface SpeedTestCandidate {
   id: string;
   name: string;
@@ -14,9 +21,10 @@ export interface SpeedTestResult {
   endpoint: string;
   httpStatus: number;
   latencyMs: number;
-  ttftMs?: number;
+  /** Measured time to the first non-empty streaming chunk; absent for non-streaming probes. */
+  ttftMs?: number | null;
   throughput?: number;
-  status: "success" | "error" | "timeout";
+  status: "success" | "redirect" | "error" | "timeout";
   errorMessage?: string;
   score: number;
 }
@@ -32,7 +40,7 @@ export interface SpeedMatrixSummary {
   explanation: string;
 }
 
-export function calculateSpeedScore(latencyMs: number, isSuccess: boolean, ttftMs?: number): number {
+export function calculateSpeedScore(latencyMs: number, isSuccess: boolean, ttftMs?: number | null): number {
   if (!isSuccess || latencyMs <= 0) return 0;
 
   // Base score from latency (0 - 80 points)
@@ -49,8 +57,8 @@ export function calculateSpeedScore(latencyMs: number, isSuccess: boolean, ttftM
     score = 5;
   }
 
-  // TTFT bonus (up to 20 points)
-  if (ttftMs && ttftMs > 0) {
+  // Only measured TTFT contributes a bonus. Missing TTFT is not evidence of a fast stream.
+  if (typeof ttftMs === "number" && Number.isFinite(ttftMs) && ttftMs >= 0) {
     if (ttftMs < 150) {
       score += 20;
     } else if (ttftMs < 500) {
@@ -58,9 +66,6 @@ export function calculateSpeedScore(latencyMs: number, isSuccess: boolean, ttftM
     } else {
       score += 5;
     }
-  } else {
-    // Default proportional TTFT estimation bonus
-    score += 15;
   }
 
   return Math.min(100, Math.max(1, Math.round(score)));
@@ -90,8 +95,22 @@ export function generateDecisionAdvice(
   const failedItems = results.filter((r) => r.status !== "success");
   let warningNote = "";
   if (failedItems.length > 0) {
-    const failedNames = failedItems.map((f) => f.profileName).join("、");
-    warningNote = `（注意：供应商「${failedNames}」本次测速异常，建议检查配额或降为备用）`;
+    const redirectNames = failedItems
+      .filter((item) => isRedirectStatus(item.httpStatus))
+      .map((item) => item.profileName)
+      .join("、");
+    const otherFailedNames = failedItems
+      .filter((item) => !isRedirectStatus(item.httpStatus))
+      .map((item) => item.profileName)
+      .join("、");
+    const notes: string[] = [];
+    if (redirectNames) {
+      notes.push(`供应商「${redirectNames}」${REDIRECT_GUIDANCE}`);
+    }
+    if (otherFailedNames) {
+      notes.push(`供应商「${otherFailedNames}」本次测速异常，建议检查配额或降为备用`);
+    }
+    warningNote = notes.length > 0 ? `（注意：${notes.join("；")}）` : "";
   }
 
   if (isAlreadyActive) {
@@ -118,7 +137,7 @@ export async function runConcurrentSpeedMatrix(
     endpoint?: string;
     errorMessage?: string;
     latencyMs?: number;
-    ttftMs?: number;
+    ttftMs?: number | null;
   }>,
   options: {
     concurrency?: number;
@@ -143,8 +162,10 @@ export async function runConcurrentSpeedMatrix(
       try {
         const testRes = await testSingleProfile(candidate);
         const elapsed = testRes.latencyMs ?? Date.now() - start;
-        const isSuccess = testRes.httpStatus >= 200 && testRes.httpStatus < 400;
+        const isSuccess = isSuccessfulHttpStatus(testRes.httpStatus);
+        const isRedirect = isRedirectStatus(testRes.httpStatus);
         const score = calculateSpeedScore(elapsed, isSuccess, testRes.ttftMs);
+        const status = isRedirect ? "redirect" : isSuccess ? "success" : "error";
 
         outcome = {
           profileId: candidate.id,
@@ -153,8 +174,8 @@ export async function runConcurrentSpeedMatrix(
           httpStatus: testRes.httpStatus,
           latencyMs: elapsed,
           ttftMs: testRes.ttftMs,
-          status: isSuccess ? "success" : "error",
-          errorMessage: testRes.errorMessage,
+          status,
+          errorMessage: testRes.errorMessage ?? httpStatusGuidance(testRes.httpStatus),
           score,
         };
       } catch (err: unknown) {

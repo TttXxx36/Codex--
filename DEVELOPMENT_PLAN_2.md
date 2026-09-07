@@ -348,6 +348,20 @@ graph TD
   - **验收标准**：
     - 测速延迟与首字响应具备真实客观的可比性。
 
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  - `apps/codex-plus-manager/src/speed-matrix.ts`：移除缺失 TTFT 时的固定 15 分默认奖励；只有真实测得的非负 TTFT 才参与首字响应加分，缺失 TTFT 时仅按真实 RTT 与成功状态评分。
+  - `apps/codex-plus-manager/src/views/RelayScreen.tsx`、`src/App.tsx`：测速请求显式开启 `streaming`，消费后端返回的真实 `latencyMs` / `ttftMs`；非流式 JSON 显示 `TTFT 未测`，不再执行任何乘数估算；测速进度总数按排除 aggregate 后的可测供应商计算。
+  - `crates/codex-plus-core/src/relay_config.rs`、`src/http_client.rs`、`apps/codex-plus-manager/src-tauri/src/commands.rs`：新增 SSE 首个非空响应分块的阶段计时与完整响应耗时，非 SSE 响应保留真实 RTT 并将 TTFT 置空；关闭测速请求的自动重定向跟随；命令与 Provider Doctor 将 2xx 作为唯一成功，3xx 返回 `redirect` 与目标 URL 修复指引。
+  - `apps/codex-plus-manager/src/http-errors.ts`、`src/request-diagnostics.ts`：建立共享 3xx 分类；301/302/303/307/308 及其它 3xx 均不进入成功集合，并显示“供应商接口已重定向，请检查配置的目标 URL”。
+  - `apps/codex-plus-manager/src/speed-matrix.test.ts`、`src/request-diagnostics.test.ts`、`crates/codex-plus-core/tests/protocol_proxy.rs`：补齐缺失 TTFT 不加分、307 不成功且给出修复建议、非流式 TTFT 为空、SSE 首块计时和不跟随 307 的回归契约。
+
+- **✅ 实际完成的结果 (Results & Verification — pending architect review)**：
+  - `apps/codex-plus-manager`：`npm test` 通过 **199/199**，0 failure；定向 `speed-matrix` + `request-diagnostics` 通过 **10/10**。【T】
+  - `git diff --check`：通过；仅有 Git 的 LF→CRLF 提示，无 whitespace error。【S/T 辅助检查】
+  - `npm run check`：未完成，当前环境缺少 `tsc` 可执行文件；Cargo/Rust 集成测试与 `rustfmt` 未运行，当前环境缺少 `cargo`，因此 Rust 编译、SSE/307 集成测试仍标记为未验证，不能升级为 C/D 级证据。
+  - 官方 Fetch/Streams 资料确认 `Response.body` 可按 chunk 读取、`Response.redirected` 只反映已发生的跟随结果，故本实现采用 `redirect: none` 先保留 3xx，再在 SSE 首个非空 chunk 处计时；供应商真实网络/E2E 仍待 CI/架构师审查。【S】
+  - 未提交、未推送；保留现场等待架构师审查流式探测对不支持 `stream=true` 的供应商兼容策略。
+
 ---
 
 ### 【任务 25 (P2 / PERF-008)】SQLite 多 Schema 真实接入与 Keyset 游标后端闭环

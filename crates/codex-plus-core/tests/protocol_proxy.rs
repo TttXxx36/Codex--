@@ -2489,7 +2489,55 @@ async fn no_auth_profile_test_omits_authorization_header() {
     let result = test_relay_profile(&profile, "gpt-5.5").await.unwrap();
 
     assert_eq!(result.http_status, 200);
+    assert!(result.latency_ms > 0);
+    assert_eq!(result.ttft_ms, None);
     assert_eq!(server.finish().authorization, None);
+}
+
+#[tokio::test]
+async fn streaming_profile_test_records_first_event_chunk_ttft() {
+    let server = spawn_streaming_chat_server();
+    let profile = RelayProfile {
+        base_url: server.base_url.clone(),
+        upstream_base_url: server.base_url.clone(),
+        relay_mode: RelayMode::PureApi,
+        no_auth: true,
+        api_key: String::new(),
+        ..RelayProfile::default()
+    };
+
+    let result = codex_plus_core::relay_config::test_relay_profile_with_streaming(
+        &profile,
+        "gpt-5.5",
+        true,
+    )
+    .await
+    .unwrap();
+
+    let ttft_ms = result.ttft_ms.expect("SSE response should expose measured TTFT");
+    assert_eq!(result.http_status, 200);
+    assert!(ttft_ms > 0);
+    assert!(result.latency_ms >= ttft_ms);
+    server.finish();
+}
+
+#[tokio::test]
+async fn profile_test_does_not_follow_redirects() {
+    let server = spawn_redirect_server();
+    let profile = RelayProfile {
+        base_url: server.base_url.clone(),
+        upstream_base_url: server.base_url.clone(),
+        relay_mode: RelayMode::PureApi,
+        no_auth: true,
+        api_key: String::new(),
+        ..RelayProfile::default()
+    };
+
+    let result = test_relay_profile(&profile, "gpt-5.5").await.unwrap();
+
+    assert_eq!(result.http_status, 307);
+    assert!(result.endpoint.ends_with("/v1/responses"));
+    server.finish();
 }
 
 fn write_chat_relay_settings(settings_dir: &Path, base_url: &str, user_agent: &str) {
@@ -2572,6 +2620,28 @@ struct ChatRequest {
     authorization: Option<String>,
 }
 
+struct StreamingChatServer {
+    base_url: String,
+    handle: thread::JoinHandle<()>,
+}
+
+impl StreamingChatServer {
+    fn finish(self) {
+        self.handle.join().unwrap();
+    }
+}
+
+struct RedirectServer {
+    base_url: String,
+    handle: thread::JoinHandle<()>,
+}
+
+impl RedirectServer {
+    fn finish(self) {
+        self.handle.join().unwrap();
+    }
+}
+
 fn spawn_chat_server() -> ChatServer {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = listener.local_addr().unwrap();
@@ -2632,6 +2702,83 @@ fn spawn_chat_server() -> ChatServer {
         }
     });
     ChatServer { base_url, handle }
+}
+
+fn spawn_streaming_chat_server() -> StreamingChatServer {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let base_url = format!("http://{address}/v1");
+    listener.set_nonblocking(true).unwrap();
+    let handle = thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        started.elapsed() < std::time::Duration::from_secs(5),
+                        "test streaming upstream did not receive a request"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => panic!("failed to accept streaming test request: {error}"),
+            }
+        };
+        let mut buffer = [0u8; 4096];
+        stream.read(&mut buffer).unwrap();
+        let first = b"data: {\"delta\":\"hello\"}\n\n";
+        let second = b"data: [DONE]\n\n";
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+        write_chunk(&mut stream, first);
+        stream.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        write_chunk(&mut stream, second);
+        stream.write_all(b"0\r\n\r\n").unwrap();
+        stream.flush().unwrap();
+    });
+    StreamingChatServer { base_url, handle }
+}
+
+fn spawn_redirect_server() -> RedirectServer {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+    let base_url = format!("http://{address}/v1");
+    listener.set_nonblocking(true).unwrap();
+    let handle = thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        started.elapsed() < std::time::Duration::from_secs(5),
+                        "test redirect upstream did not receive a request"
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => panic!("failed to accept redirect test request: {error}"),
+            }
+        };
+        let mut buffer = [0u8; 4096];
+        stream.read(&mut buffer).unwrap();
+        stream
+            .write_all(
+                b"HTTP/1.1 307 Temporary Redirect\r\nLocation: https://example.test/v1/responses\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+    RedirectServer { base_url, handle }
+}
+
+fn write_chunk(stream: &mut std::net::TcpStream, body: &[u8]) {
+    write!(stream, "{:X}\r\n", body.len()).unwrap();
+    stream.write_all(body).unwrap();
+    stream.write_all(b"\r\n").unwrap();
 }
 
 // ── tool 输出中的图片（issue #1996）────────────────────────────────────

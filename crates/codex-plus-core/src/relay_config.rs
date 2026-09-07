@@ -1,9 +1,10 @@
 use anyhow::Context;
+use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use toml_edit::{DocumentMut, Item, Table, TableLike};
 
 use crate::settings::{
@@ -76,6 +77,8 @@ pub struct RelayProfileTestResult {
     pub http_status: u16,
     pub endpoint: String,
     pub response_preview: String,
+    pub latency_ms: u64,
+    pub ttft_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -661,6 +664,14 @@ pub async fn test_relay_profile(
     profile: &RelayProfile,
     model: &str,
 ) -> anyhow::Result<RelayProfileTestResult> {
+    test_relay_profile_with_streaming(profile, model, false).await
+}
+
+pub async fn test_relay_profile_with_streaming(
+    profile: &RelayProfile,
+    model: &str,
+    streaming: bool,
+) -> anyhow::Result<RelayProfileTestResult> {
     let base_url = relay_profile_base_url(profile);
     let base_url = base_url.trim().trim_end_matches('/');
     if base_url.is_empty() {
@@ -672,7 +683,7 @@ pub async fn test_relay_profile(
         anyhow::bail!("API Key 不能为空");
     }
 
-    let client = crate::http_client::proxied_client("CodexPlusPlus/RelayTest")?;
+    let client = crate::http_client::proxied_client_no_redirect("CodexPlusPlus/RelayTest")?;
     let endpoint = match profile.protocol {
         RelayProtocol::Responses => format!("{base_url}/responses"),
         RelayProtocol::ChatCompletions => format!("{base_url}/chat/completions"),
@@ -682,11 +693,15 @@ pub async fn test_relay_profile(
         anyhow::bail!("测试模型不能为空");
     }
 
-    let payload = relay_profile_test_payload(profile.protocol, test_model);
+    let payload = relay_profile_test_payload(profile.protocol, test_model, streaming);
+    let started_at = Instant::now();
     let mut request = client
         .post(&endpoint)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .json(&payload);
+    if streaming {
+        request = request.header(reqwest::header::ACCEPT, "text/event-stream");
+    }
     if !profile.uses_no_auth() {
         request = request.bearer_auth(api_key);
     }
@@ -706,34 +721,82 @@ pub async fn test_relay_profile(
             .post(&v1_endpoint)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .json(&payload);
+        if streaming {
+            request = request.header(reqwest::header::ACCEPT, "text/event-stream");
+        }
         if !profile.uses_no_auth() {
             request = request.bearer_auth(api_key);
         }
         let v1_response = request.send().await?;
         let v1_status = v1_response.status().as_u16();
-        if v1_status < 400 {
-            let response_text = v1_response.text().await.unwrap_or_default();
+        if (200..300).contains(&v1_status)
+            || matches!(v1_status, 301 | 302 | 303 | 307 | 308)
+        {
+            let (response_text, ttft_ms, latency_ms) =
+                read_relay_test_response(v1_response, started_at, streaming).await?;
+            let response_text = if (200..300).contains(&v1_status) {
+                format!(
+                    "（Base URL 建议加上 /v1 前缀）{}",
+                    response_text.chars().take(280).collect::<String>()
+                )
+            } else {
+                response_text
+            };
             return Ok(RelayProfileTestResult {
                 http_status: v1_status,
                 endpoint: v1_endpoint,
-                response_preview: format!(
-                    "（Base URL 建议加上 /v1 前缀）{}",
-                    response_text.chars().take(280).collect::<String>()
-                ),
+                response_preview: response_text,
+                latency_ms,
+                ttft_ms,
             });
         }
     }
 
-    let response_text = response.text().await.unwrap_or_default();
+    let (response_text, ttft_ms, latency_ms) =
+        read_relay_test_response(response, started_at, streaming).await?;
     Ok(RelayProfileTestResult {
         http_status,
         endpoint,
-        response_preview: response_text.chars().take(320).collect(),
+        response_preview: response_text,
+        latency_ms,
+        ttft_ms,
     })
 }
 
-fn relay_profile_test_payload(protocol: RelayProtocol, model: &str) -> Value {
-    match protocol {
+async fn read_relay_test_response(
+    response: reqwest::Response,
+    started_at: Instant,
+    measure_ttft: bool,
+) -> anyhow::Result<(String, Option<u64>, u64)> {
+    let is_stream_response = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_ascii_lowercase().starts_with("text/event-stream"))
+        .unwrap_or(false);
+    let mut body = Vec::new();
+    let mut ttft_ms = None;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if chunk.is_empty() {
+            continue;
+        }
+        if measure_ttft && is_stream_response && ttft_ms.is_none() {
+            ttft_ms = Some(started_at.elapsed().as_millis().max(1) as u64);
+        }
+        if body.len() < 4096 {
+            let remaining = 4096 - body.len();
+            body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        }
+    }
+    let latency_ms = started_at.elapsed().as_millis().max(1) as u64;
+    let response_text = String::from_utf8_lossy(&body).chars().take(320).collect();
+    Ok((response_text, ttft_ms, latency_ms))
+}
+
+fn relay_profile_test_payload(protocol: RelayProtocol, model: &str, streaming: bool) -> Value {
+    let mut payload = match protocol {
         RelayProtocol::Responses => serde_json::json!({
             "model": model,
             "input": "hi",
@@ -746,7 +809,11 @@ fn relay_profile_test_payload(protocol: RelayProtocol, model: &str) -> Value {
             ],
             "max_tokens": 16
         }),
+    };
+    if streaming {
+        payload["stream"] = json!(true);
     }
+    payload
 }
 
 fn codex_base_url_for_protocol(base_url: &str, protocol: RelayProtocol, proxy_port: u16) -> String {

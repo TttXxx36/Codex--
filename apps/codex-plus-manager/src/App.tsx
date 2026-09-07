@@ -530,7 +530,7 @@ export type RelayProfileTestResult = CommandResult<{
   endpoint: string;
   responsePreview: string;
   latencyMs?: number;
-  ttftMs?: number;
+  ttftMs?: number | null;
 }>;
 
 type StepwiseTestResult = CommandResult<{

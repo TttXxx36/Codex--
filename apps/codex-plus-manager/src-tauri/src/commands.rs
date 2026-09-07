@@ -22,6 +22,12 @@ use serde_json::{Value, json};
 
 use crate::install::{self, InstallActionResult, InstallOptions};
 
+const RELAY_REDIRECT_GUIDANCE: &str = "供应商接口已重定向，请检查配置的目标 URL";
+
+fn is_relay_redirect_status(status: u16) -> bool {
+    matches!(status, 301 | 302 | 303 | 307 | 308)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct CommandResult<T>
 where
@@ -321,6 +327,8 @@ pub struct RelayProfileTestPayload {
     pub http_status: u16,
     pub endpoint: String,
     pub response_preview: String,
+    pub latency_ms: u64,
+    pub ttft_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -4813,7 +4821,10 @@ pub fn extract_relay_common_config(
 }
 
 #[tauri::command]
-pub async fn test_relay_profile(profile: RelayProfile) -> CommandResult<RelayProfileTestPayload> {
+pub async fn test_relay_profile(
+    profile: RelayProfile,
+    streaming: Option<bool>,
+) -> CommandResult<RelayProfileTestPayload> {
     let profile_name = if profile.name.trim().is_empty() {
         "未命名供应商"
     } else {
@@ -4833,15 +4844,27 @@ pub async fn test_relay_profile(profile: RelayProfile) -> CommandResult<RelayPro
             from_profile
         }
     };
-    match codex_plus_core::relay_config::test_relay_profile(&profile, &test_model).await {
+    match codex_plus_core::relay_config::test_relay_profile_with_streaming(
+        &profile,
+        &test_model,
+        streaming.unwrap_or(false),
+    )
+    .await
+    {
         Ok(result) => {
-            let status = if result.http_status < 400 {
+            let is_success = (200..300).contains(&result.http_status);
+            let is_redirect = is_relay_redirect_status(result.http_status);
+            let status = if is_success {
                 "ok"
+            } else if is_redirect {
+                "redirect"
             } else {
                 "failed"
             };
             let preview = result.response_preview.trim();
-            let detail = if preview.is_empty() {
+            let detail = if is_redirect {
+                RELAY_REDIRECT_GUIDANCE.to_string()
+            } else if preview.is_empty() {
                 "响应内容为空".to_string()
             } else {
                 format!("响应：{preview}")
@@ -4856,6 +4879,8 @@ pub async fn test_relay_profile(profile: RelayProfile) -> CommandResult<RelayPro
                     http_status: result.http_status,
                     endpoint: result.endpoint,
                     response_preview: result.response_preview,
+                    latency_ms: result.latency_ms,
+                    ttft_ms: result.ttft_ms,
                 },
             }
         }
@@ -4865,6 +4890,8 @@ pub async fn test_relay_profile(profile: RelayProfile) -> CommandResult<RelayPro
                 http_status: 0,
                 endpoint: String::new(),
                 response_preview: String::new(),
+                latency_ms: 0,
+                ttft_ms: None,
             },
         ),
     }
@@ -5130,8 +5157,10 @@ pub async fn diagnose_relay_profile(profile: RelayProfile) -> CommandResult<Prov
 
     match codex_plus_core::relay_config::test_relay_profile(&profile, &test_model).await {
         Ok(result) => {
-            let status = if result.http_status < 400 {
+            let status = if (200..300).contains(&result.http_status) {
                 "ok"
+            } else if is_relay_redirect_status(result.http_status) {
+                "redirect"
             } else {
                 "failed"
             };
@@ -5141,10 +5170,16 @@ pub async fn diagnose_relay_profile(profile: RelayProfile) -> CommandResult<Prov
                 title: "真实请求".to_string(),
                 status: status.to_string(),
                 detail: if preview.is_empty() {
-                    format!(
-                        "{} 返回 HTTP {}，响应内容为空。",
-                        result.endpoint, result.http_status
-                    )
+                    if status == "redirect" {
+                        format!("{} 返回 HTTP {}，{}", result.endpoint, result.http_status, RELAY_REDIRECT_GUIDANCE)
+                    } else {
+                        format!(
+                            "{} 返回 HTTP {}，响应内容为空。",
+                            result.endpoint, result.http_status
+                        )
+                    }
+                } else if status == "redirect" {
+                    format!("{} 返回 HTTP {}：{}", result.endpoint, result.http_status, RELAY_REDIRECT_GUIDANCE)
                 } else {
                     format!(
                         "{} 返回 HTTP {}：{}",
@@ -5165,18 +5200,24 @@ pub async fn diagnose_relay_profile(profile: RelayProfile) -> CommandResult<Prov
         .iter()
         .filter(|check| check.status == "failed")
         .count();
+    let redirect_count = checks
+        .iter()
+        .filter(|check| check.status == "redirect")
+        .count();
     let warning_count = checks
         .iter()
         .filter(|check| check.status == "warning")
         .count();
-    let status = if failed_count > 0 {
+    let status = if failed_count > 0 || redirect_count > 0 {
         "failed"
     } else if warning_count > 0 {
         "ok"
     } else {
         "ok"
     };
-    let summary = if failed_count > 0 {
+    let summary = if redirect_count > 0 {
+        format!("发现 {redirect_count} 项重定向，必须更新供应商目标 URL。")
+    } else if failed_count > 0 {
         format!("发现 {failed_count} 项失败，Codex 可能无法使用该供应商。")
     } else if warning_count > 0 {
         format!("基础连接可用，但有 {warning_count} 项需要确认。")
@@ -5199,6 +5240,12 @@ pub async fn diagnose_relay_profile(profile: RelayProfile) -> CommandResult<Prov
 }
 
 fn provider_doctor_recommendation(checks: &[ProviderDoctorCheck]) -> String {
+    if checks
+        .iter()
+        .any(|check| check.id == "request" && check.status == "redirect")
+    {
+        return RELAY_REDIRECT_GUIDANCE.to_string();
+    }
     if checks
         .iter()
         .any(|check| check.id == "config" && check.status == "failed")

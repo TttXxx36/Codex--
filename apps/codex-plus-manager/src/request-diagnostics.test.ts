@@ -19,6 +19,12 @@ test("classifyHttpError categorizes status codes and errors correctly", () => {
   assert.equal(classifyHttpError(500).errorClass, "server_error");
   assert.equal(classifyHttpError(502).errorClass, "server_error");
   assert.equal(classifyHttpError(504).errorClass, "timeout");
+  for (const statusCode of [301, 302, 307, 308]) {
+    const redirect = classifyHttpError(statusCode);
+    assert.equal(redirect.errorClass, "redirect");
+    assert.equal(redirect.statusDescription, "供应商接口已重定向，请检查配置的目标 URL");
+    assert.equal(redirect.remedyTargetRoute, "relay");
+  }
   assert.equal(classifyHttpError(0, "connection timed out").errorClass, "timeout");
   assert.equal(classifyHttpError(0, "cdp bridge injection failed").errorClass, "bridge");
 });

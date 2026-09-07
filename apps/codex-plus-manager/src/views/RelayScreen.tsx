@@ -70,6 +70,7 @@ import {
 import { codexGoalsFeatureState, setCodexGoalsFeatureInConfig } from "../goals-config";
 import { relayAuthForLiveDraft } from "../relay-live-files";
 import { getActionableEnvConflicts, type EnvConflictProfile } from "../env-conflicts-guard";
+import { httpStatusGuidance } from "../http-errors.ts";
 import { runConcurrentSpeedMatrix, type SpeedMatrixSummary } from "../speed-matrix";
 import type { ProviderSwitchPreflight, SwitchRollbackSnapshot } from "../provider-switch-preflight";
 import { vlmTestTranslation } from "../vlm-test-translation";
@@ -255,7 +256,8 @@ const RelayScreen = memo(function RelayScreen({
   const runSpeedTest = async () => {
     if (speedTesting) return;
     setSpeedTesting(true);
-    setSpeedTestProgress({ completed: 0, total: normalized.relayProfiles.length });
+    const testableCount = normalized.relayProfiles.filter((profile) => profile.relayMode !== "aggregate").length;
+    setSpeedTestProgress({ completed: 0, total: testableCount });
 
     try {
       const summary = await runConcurrentSpeedMatrix(
@@ -264,14 +266,14 @@ const RelayScreen = memo(function RelayScreen({
           const profile = normalized.relayProfiles.find((p) => p.id === candidate.id);
           if (!profile) throw new Error("Profile not found");
           const start = performance.now();
-          const res = await invoke<RelayProfileTestResult>("test_relay_profile", { profile });
+          const res = await invoke<RelayProfileTestResult>("test_relay_profile", { profile, streaming: true });
           const latencyMs = Math.round(performance.now() - start);
           return {
             httpStatus: res.httpStatus,
             endpoint: res.endpoint,
-            errorMessage: res.httpStatus >= 400 ? res.responsePreview : undefined,
-            latencyMs,
-            ttftMs: res.ttftMs || Math.round(latencyMs * 0.7),
+            errorMessage: httpStatusGuidance(res.httpStatus) ?? (res.httpStatus >= 400 ? res.responsePreview : undefined),
+            latencyMs: res.latencyMs ?? latencyMs,
+            ttftMs: res.ttftMs ?? undefined,
           };
         },
         {
@@ -442,7 +444,9 @@ const RelayScreen = memo(function RelayScreen({
             </div>
             <Button
               variant="outline"
-              disabled={speedTesting || !normalized.relayProfiles.length}
+              disabled={
+                speedTesting || !normalized.relayProfiles.some((profile) => profile.relayMode !== "aggregate")
+              }
               onClick={() => void runSpeedTest()}
             >
               {speedTesting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
@@ -510,7 +514,13 @@ const RelayScreen = memo(function RelayScreen({
                           variant={item.status === "success" ? "secondary" : "destructive"}
                           className="font-mono text-[10px] px-1.5 py-0"
                         >
-                          {item.status === "success" ? `${item.latencyMs}ms` : item.status === "timeout" ? t("超时") : t("失败")}
+                          {item.status === "success"
+                            ? `${item.latencyMs}ms${item.ttftMs != null ? ` / TTFT ${item.ttftMs}ms` : " / TTFT 未测"}`
+                            : item.status === "redirect"
+                            ? t("重定向")
+                            : item.status === "timeout"
+                            ? t("超时")
+                            : t("失败")}
                         </UiBadge>
                       </div>
                       <div className="text-[11px] font-mono text-muted-foreground truncate mb-1" title={item.endpoint}>
