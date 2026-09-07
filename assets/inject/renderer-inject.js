@@ -395,8 +395,6 @@
   const sessionCopyMenuActivationTimeoutMs = 12000;
   const sessionShareButtonClass = "codex-session-share-button";
   const sessionShareButtonVersion = "1";
-  const codexPlusShareBaseUrl = "https://share.codexpp.cc";
-  const codexPlusShareFallbackBaseUrl = "https://codexpp-share.pages.dev";
   const codexPlusShareMaxCharacters = 900000;
   const sessionAutoRenameTimeoutMs = 20000;
   const zedRemoteToastClass = "codex-zed-remote-toast";
@@ -4275,14 +4273,6 @@
         openManagerFromCodex();
         return;
       }
-      if (target?.closest("[data-codex-plus-discord]")) {
-        window.open("https://discord.gg/y96kX7A76v", "_blank");
-        return;
-      }
-      if (target?.closest("[data-codex-plus-telegram]")) {
-        window.open("https://t.me/CodexPlusPlus", "_blank");
-        return;
-      }
       const issueButton = target?.closest("[data-codex-plus-issue]");
       if (issueButton) {
         const issueUrl = "https://github.com/TttXxx36/Codex--/issues";
@@ -7115,12 +7105,6 @@
     setTimeout(() => toast.remove(), 10000);
   }
 
-  function shareBase64Url(bytes) {
-    let binary = "";
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-
   function shareTextFromElement(element) {
     const clone = element.cloneNode(true);
     clone.querySelectorAll?.("button, textarea, input, select, [contenteditable='true'], .codex-delete-toast, .codex-plus-modal-overlay, .codex-plus-page-overlay, .codex-session-share-button").forEach((node) => node.remove());
@@ -7186,21 +7170,6 @@
     };
   }
 
-  async function encryptSessionShare(value) {
-    const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
-    const exportedKey = await crypto.subtle.exportKey("raw", key);
-    return {
-      key: shareBase64Url(new Uint8Array(exportedKey)),
-      encrypted: {
-        v: 1,
-        iv: shareBase64Url(iv),
-        ciphertext: shareBase64Url(new Uint8Array(ciphertext)),
-      },
-    };
-  }
-
   async function createSessionShare() {
     const { ref, markdown, session } = sessionShareMarkdown();
     if (!ref.session_id) {
@@ -7218,32 +7187,22 @@
       button.textContent = "正在导出…";
     }
     try {
-      let shareDocument = session;
-      const nativeSession = await postJson("/session/export", {
-        session_id: ref.session_id,
-        title: session.title,
-      });
-      if (nativeSession?.status === "ok" && nativeSession.kind === "codex-rollout" && typeof nativeSession.content === "string") {
-        shareDocument = { ...nativeSession, title: session.title };
-      }
-      const encrypted = await encryptSessionShare(JSON.stringify(shareDocument));
-      const payload = { ttl: 604800, encrypted: encrypted.encrypted };
-      let result = null;
+      let nativeSession = null;
       try {
-        result = await postJson("/share/create", payload);
+        nativeSession = await postJson("/session/export", {
+          session_id: ref.session_id,
+          title: session.title,
+        });
       } catch (_) {
-        result = null;
+        nativeSession = null;
       }
-      // 安全保护策略：远程公网托管分享停用，不再向外部服务器上传；
-      // 本地保留加密凭据引用兼容测试契约，实际复制完整 Markdown 内容至剪贴板
-      const offlineShareRef = `${codexPlusShareBaseUrl}/?s=${encodeURIComponent(result?.id || ref.session_id)}#k=${encrypted.key}`;
-      void offlineShareRef;
-      const shareUrl = markdown;
+      const nativeMarkdown = typeof nativeSession?.markdown === "string" ? nativeSession.markdown.trim() : "";
+      const shareMarkdown = (nativeMarkdown || markdown).slice(0, codexPlusShareMaxCharacters);
       try {
-        await navigator.clipboard.writeText(shareUrl);
+        await navigator.clipboard.writeText(shareMarkdown);
       } catch (_) {
         const input = document.createElement("textarea");
-        input.value = shareUrl;
+        input.value = shareMarkdown;
         input.style.position = "fixed";
         input.style.opacity = "0";
         document.body.appendChild(input);
@@ -7378,7 +7337,7 @@
   function installSessionShareImportListener() {
     window.removeEventListener("message", window.__codexSessionShareImportHandler);
     window.__codexSessionShareImportHandler = (event) => {
-      if (!/^(https:\/\/share\.codexpp\.cc|https:\/\/codexpp-share\.pages\.dev)$/.test(event.origin || "") || event.data?.type !== "codexpp-import-session") return;
+      if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "codexpp-import-session") return;
       const session = event.data?.session;
       if (!session || !["codex-session", "codex-rollout"].includes(session.kind)) return;
       if (session.kind === "codex-session" && !Array.isArray(session.messages)) return;

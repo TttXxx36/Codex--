@@ -232,10 +232,15 @@ graph TD
     - 静态源码断言无远程分享伪链接构造。
 
 - **🛠️ 实际完成的步骤 (Actual Steps)**：
-  - *（待任务实施后登记具体文件修改、核心逻辑改造与提交 commit）*
+  - `assets/inject/renderer-inject.js`：移除 `/share/create` 请求、远程分享基准 URL、AES 远程载荷与 `offlineShareRef`；保留本地 `/session/export`（失败回退 DOM）和结构化 Markdown 剪贴板复制。
+  - `assets/inject/renderer-inject.js`：将会话导入消息监听限制为当前窗口与当前 origin，清理 Discord/Telegram 外链死分支，避免注入脚本继续携带公网分享入口。
+  - `apps/codex-plus-manager/src/renderer-inject.test.ts`：将远程分享断言改为 `assert.doesNotMatch`，补充本地 Markdown、剪贴板、本地 origin 与无公网域名契约断言。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - *（待任务验证后登记客观测试命令、通过指标与失败路径覆盖断言）*
+  - `apps/codex-plus-manager`：`npm test` 通过 **198/198**（0 failure，保持 BUG-012 基线）。【T】
+  - `node --test src/renderer-inject.test.ts`：**36/36 passed**。【T】
+  - `git diff --check`：通过；注入脚本静态扫描未发现 `share.codexpp.cc`、`codexpp-share.pages.dev`、`/share/create`、`offlineShareRef` 或 Discord/Telegram 外链。【S/T 辅助检查】
+  - 当前未提交、未推送；未修改后端公网分享导入 API 与既有本地会话导入契约，Rust/桌面 E2E 未在本机执行。
 
 ---
 
