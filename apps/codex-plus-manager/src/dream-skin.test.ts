@@ -9,6 +9,8 @@ import {
   resolveDreamSkinStylePreset,
 } from "./dream-skin.ts";
 
+const readDreamSkinView = () => readFile(new URL("./views/DreamSkinScreen.tsx", import.meta.url), "utf8");
+
 describe("dream skin theme helpers", () => {
   it("uses the Codex-Dream-Skin theme.json defaults", () => {
     const theme = defaultDreamSkinTheme();
@@ -104,16 +106,16 @@ describe("dream skin theme helpers", () => {
 
   it("aligns tall companion images by rendered height with a wider vertical offset range", async () => {
     const renderer = await readFile(new URL("../../../assets/inject/renderer-inject.js", import.meta.url), "utf8");
-    const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
 
     assert.match(renderer, /companion\.naturalWidth/);
     assert.match(renderer, /companion\.naturalHeight/);
     assert.match(renderer, /composer\.rect\.bottom - renderedHeight \+ config\.offsetY/);
     assert.match(renderer, /window\.innerHeight - renderedHeight - edge/);
     assert.match(renderer, /const offsetY = Math\.max\(-160, Math\.min\(Number\(companion\.offsetY\) \|\| 0, 160\)\)/);
-    assert.match(app, /min=\{-160\}/);
-    assert.match(app, /max=\{160\}/);
-    assert.match(app, /Math\.max\(-160, Math\.min\(160, Number\(event\.currentTarget\.value\) \|\| 0\)\)/);
+    assert.match(view, /min=\{-160\}/);
+    assert.match(view, /max=\{160\}/);
+    assert.match(view, /Math\.max\(-160, Math\.min\(160, Number\(event\.currentTarget\.value\) \|\| 0\)\)/);
   });
 
   it("keeps the Windows skin active when the sidebar is hidden", async () => {
@@ -181,14 +183,14 @@ describe("dream skin theme helpers", () => {
   });
 
   it("exposes companion image controls in the theme editor", async () => {
-    const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
 
-    assert.match(app, /dream-skin-companion-controls/);
-    assert.match(app, /FileReader/);
-    assert.match(app, /companion\.dataUrl/);
-    assert.match(app, /companion\?\.offsetX/);
-    assert.match(app, /companion\?\.offsetY/);
-    assert.match(app, /companionEnabled/);
+    assert.match(view, /dream-skin-companion-controls/);
+    assert.match(view, /FileReader/);
+    assert.match(view, /companion\.dataUrl/);
+    assert.match(view, /companion\?\.offsetX/);
+    assert.match(view, /companion\?\.offsetY/);
+    assert.match(view, /companionEnabled/);
   });
 
   it("detects text, color, and image draft changes", () => {
@@ -218,7 +220,7 @@ describe("dream skin theme helpers", () => {
   });
 
   it("visibly credits the source project and exposes complete controls", async () => {
-    const source = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const source = await readDreamSkinView();
 
     for (const text of [
       "Fei-Away/Codex-Dream-Skin",
@@ -257,13 +259,14 @@ describe("dream skin theme helpers", () => {
 
   it("keeps theme draft separate from backend settings until explicit activation", async () => {
     const source = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
 
     assert.match(source, /selectedDreamSkinTheme/);
     assert.match(source, /dreamSkinThemeDraft/);
     assert.match(source, /activate_dream_skin_theme/);
     assert.match(source, /DreamSkinUnsavedDialog/);
     assert.match(source, /pendingDreamSkinRestart/);
-    assert.match(source, /重启并应用/);
+    assert.match(view, /重启并应用/);
     assert.doesNotMatch(source, /当前 Codex 无法实时切换完整主题，需要重启 Codex\+\+。是否立即重启/);
   });
 
@@ -285,32 +288,32 @@ describe("dream skin theme helpers", () => {
   });
 
   it("renders responsive three-column theme grids with platform guidance", async () => {
-    const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
     const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 
-    assert.match(app, /dream-skin-theme-library/);
-    assert.match(app, /Windows 使用亮暗模式、图片取色和可选强调色/);
+    assert.match(view, /dream-skin-theme-library/);
+    assert.match(view, /Windows 使用亮暗模式、图片取色和可选强调色/);
     assert.match(css, /\.dream-skin-market-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s);
     assert.match(css, /\.dream-skin-theme-list\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s);
     assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*\.dream-skin-theme-list\s*\{[^}]*grid-template-columns:\s*1fr/s);
   });
 
   it("keeps advanced theme editing collapsed outside the theme switcher", async () => {
-    const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
-    const customizerStart = app.indexOf('<details className="dream-skin-customizer">');
-    const customizerEnd = app.indexOf("</details>", customizerStart);
-    const libraryStart = app.indexOf('<section className="dream-skin-theme-library">');
-    const libraryEnd = app.indexOf("</section>", libraryStart);
+    const view = await readDreamSkinView();
+    const customizerStart = view.indexOf('<details className="dream-skin-customizer">');
+    const customizerEnd = view.indexOf("</details>", customizerStart);
+    const libraryStart = view.indexOf('<section className="dream-skin-theme-library">');
+    const libraryEnd = view.indexOf("</section>", libraryStart);
 
     assert.ok(customizerStart >= 0);
     assert.ok(customizerEnd > customizerStart);
     assert.ok(libraryStart >= 0);
     assert.ok(libraryEnd > libraryStart);
 
-    const customizer = app.slice(customizerStart, customizerEnd);
-    const library = app.slice(libraryStart, libraryEnd);
+    const customizer = view.slice(customizerStart, customizerEnd);
+    const library = view.slice(libraryStart, libraryEnd);
 
-    assert.doesNotMatch(app.slice(customizerStart, customizerStart + 80), /\sopen(?:=|\s|>)/);
+    assert.doesNotMatch(view.slice(customizerStart, customizerStart + 80), /\sopen(?:=|\s|>)/);
     assert.match(library, /应用主题/);
     assert.doesNotMatch(library, /t\("(?:从图片创建|保存主题|恢复 Dream Skin 默认主题)"\)/);
     assert.match(customizer, /t\("从图片创建"\)/);
@@ -321,25 +324,27 @@ describe("dream skin theme helpers", () => {
 
   it("exposes only effective Windows appearance and accent controls", async () => {
     const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
 
-    assert.match(app, /dream-skin-windows-theme-controls/);
-    assert.match(app, /自动/);
-    assert.match(app, /亮色/);
-    assert.match(app, /暗色/);
-    assert.match(app, /跟随图片配色/);
-    assert.match(app, /isWindowsPlatform \? \([\s\S]*dream-skin-windows-theme-controls[\s\S]*dream-skin-colors/);
+    assert.match(view, /dream-skin-windows-theme-controls/);
+    assert.match(view, /自动/);
+    assert.match(view, /亮色/);
+    assert.match(view, /暗色/);
+    assert.match(view, /跟随图片配色/);
+    assert.match(view, /isWindowsPlatform \? \([\s\S]*dream-skin-windows-theme-controls[\s\S]*dream-skin-colors/);
     assert.match(app, /if \(isWindowsPlatform\) \{[\s\S]*delete config\.colors;[\s\S]*delete config\.palette;/);
   });
 
   it("separates the remote marketplace from local theme editing", async () => {
     const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const view = await readDreamSkinView();
     const css = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 
     assert.match(app, /refresh_dream_skin_market/);
     assert.match(app, /install_dream_skin_market_theme/);
-    assert.match(app, /主题市场/);
-    assert.match(app, /投稿主题/);
-    assert.match(app, /onInstalled=\{\(\) => setThemeView\("local"\)\}/);
+    assert.match(view, /主题市场/);
+    assert.match(view, /投稿主题/);
+    assert.match(view, /onInstalled=\{\(\) => setThemeView\("local"\)\}/);
     assert.match(css, /\.dream-skin-market-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s);
     assert.match(css, /\.dream-skin-market-preview\s*\{[^}]*aspect-ratio:\s*16 \/ 9/s);
   });

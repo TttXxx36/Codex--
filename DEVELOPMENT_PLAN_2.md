@@ -297,14 +297,17 @@ graph TD
   - 在 `app-decoupling.test.ts` 扩展 Overview、Sessions、Diagnostics、Relay 四个 lazy view 的动态导入、文件、默认导出和路由接入契约；不新增测试文件，维持基线计数。
   - 第三阶段将 RelayScreen 的供应商列表、详情编辑器、模型窗口/metadata、VLM、聚合供应商、环境冲突、公共配置与切换预检/回滚覆盖层迁移到 `views/RelayScreen.tsx`；通过 `RelayScreenActions` / `RelayScreenHelpers` 传入最小页面契约，保留既有保存、切换、测速和模型路由行为。
   - App.tsx 在模块顶层新增 `lazy(() => import("./views/RelayScreen"))`，Relay 路由改为传入表单数据、预检/撤销状态和注入式 actions/helpers；同步把模型路由静态契约测试改为读取迁移后的 RelayScreen 源码。
+  - 第四阶段继续迁移剩余十个路由屏幕到独立模块：RelayEnvironmentScreen、ContextScreen、WeixinConnectScreen、EnhanceScreen、DreamSkinScreen、ZedRemoteScreen、UserScriptsScreen、MaintenanceScreen、AboutScreen 与 SettingsScreen；页面状态和动作仍由 App.tsx 协调，视图只接收显式 props/actions。
+  - App.tsx 新增其余十个模块顶层 lazy(() => import(...)) 声明，所有 14 个 routed screens 统一由既有 Suspense fallback 承接；保留全局确认/重启覆盖层与跨页面协调逻辑。
+  - app-decoupling.test.ts 扩展为锁定 14 个 lazy view 的动态导入、模块文件、默认导出、memo 导出和路由接入；dream-skin.test.ts、renderer-inject.test.ts 将已迁移 UI 静态契约改为读取对应 view 源码，控制器/后端契约仍读取 App.tsx。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
-  - App.tsx 从第一阶段 11,683 行进一步降至 11,016 行（较原始 11,881 行减少 865 行）；SessionsScreen、DiagnosticsScreen 已脱离 App.tsx，源码层确认三者均存在模块顶层动态 import。【S】
-  - 第三阶段在 phase-2 基线 11,016 行上继续移除 RelayScreen 2,278 行；当前 App.tsx 为 8,738 行，RelayScreen.tsx 为 2,631 行，Relay 路由与 preflight/rollback 覆盖层已脱离主 Shell，并由模块顶层动态 import 接入。【S】
-  - apps/codex-plus-manager：npm test 通过 199/199，0 failure；定向 app-decoupling.test.ts 通过 2/2。【T】
-  - git diff --check 通过。【S/T 辅助检查】
-  - npm run check 与 npm run vite:build 均因当前环境缺少 tsc/vite 可执行文件退出；因此 TypeScript 类型检查、Vite 实际异步 chunk、主 bundle 体积和桌面端 E2E 仍为未验证，不能把源码动态导入升级为 C/D 级构建或运行证据。
-  - 第二阶段未修改 IPC、后端分页/删除/导入逻辑或状态管理；本阶段未提交、未推送。真实构建产物验证和架构师审查仍是后续门禁。
+  - 第一至第三阶段的 Overview、Sessions、Diagnostics、Relay 拆分结果保持不变；phase-3 基线为 App.tsx 8,738 行、RelayScreen.tsx 2,631 行。
+  - 第四阶段从该基线继续移除 2,774 行，当前 App.tsx 为 5,964 行；新增十个 view 文件合计 3,021 行，14 个 routed screens 均有源码层模块顶层 lazy import。App.tsx 仍包含较多状态、动作、helper 与全局覆盖层，尚未达到计划中的 800 行以内纯 Shell 目标，需架构师审查后再决定是否继续抽离。【S】
+  - apps/codex-plus-manager：`npm test` 通过 199/199，0 failure；其中 `app-decoupling.test.ts` 通过 2/2。【T】
+  - `git diff --check` 通过；Git 仅提示工作树文件未来可能发生 LF→CRLF 转换，无 whitespace error。【S/T 辅助检查】
+  - `npm run check` 与 `npm run vite:build` 均因当前环境缺少 `tsc`/`vite` 可执行文件退出；因此 TypeScript 类型编译、真实异步 chunk、主 bundle 体积和桌面端 E2E 仍未验证，不能把源码动态导入升级为构建或运行证据。
+  - 未修改 IPC、后端协议或状态拥有关系；本阶段未提交、未推送。真实构建产物验证、E2E 与架构师审查仍是后续门禁。
 
 ---
 

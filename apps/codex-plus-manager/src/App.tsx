@@ -126,13 +126,13 @@ import {
   type SwitchRollbackSnapshot,
 } from "./provider-switch-preflight";
 
-const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
-const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
-const dreamSkinMacPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/macos/portal-hero.png", import.meta.url).href;
-const dreamSkinCompanionDataUrlLimit = 240_000;
-const dreamSkinCompanionMimeTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+export const isWindowsPlatform = /\bWindows\b/i.test(navigator.userAgent);
+export const dreamSkinWindowsPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/windows/dream-reference.jpg", import.meta.url).href;
+export const dreamSkinMacPreviewUrl = new URL("../../../assets/inject/upstream/dream-skin/macos/portal-hero.png", import.meta.url).href;
+export const dreamSkinCompanionDataUrlLimit = 240_000;
+export const dreamSkinCompanionMimeTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-type Status = "ok" | "failed" | "not_implemented" | "not_checked" | string;
+export type Status = "ok" | "failed" | "not_implemented" | "not_checked" | string;
 
 type CommandResult<T> = T & {
   status: Status;
@@ -141,7 +141,7 @@ type CommandResult<T> = T & {
 
 type PendingDreamSkinCommunityResult = CommandResult<{ versionId: string }>;
 
-type PendingDreamSkinRestart = {
+export type PendingDreamSkinRestart = {
   currentThemeKey: string | null;
   currentThemeName: string;
   pendingThemeKey: string;
@@ -153,7 +153,7 @@ type PathState = {
   path: string | null;
 };
 
-type OverviewResult = CommandResult<{
+export type OverviewResult = CommandResult<{
   codex_app: PathState;
   codex_version: string | null;
   silent_shortcut: PathState;
@@ -184,7 +184,7 @@ type PluginMarketplaceStatusResult = CommandResult<{
   needsRepair: boolean;
 }>;
 
-type RemotePluginMarketplaceResult = CommandResult<{
+export type RemotePluginMarketplaceResult = CommandResult<{
   codexHome: string;
   marketplaceRoot?: string | null;
   configRegistered: boolean;
@@ -266,8 +266,8 @@ export type BackendSettings = {
   relayTestModel: string;
 };
 
-type ZedOpenStrategy = "addToFocusedWorkspace" | "reuseWindow" | "newWindow" | "default";
-type LaunchMode = "patch" | "relay";
+export type ZedOpenStrategy = "addToFocusedWorkspace" | "reuseWindow" | "newWindow" | "default";
+export type LaunchMode = "patch" | "relay";
 type ImageOverlayFitMode = "fill" | "fit" | "stretch" | "tile" | "center";
 
 export type RelayProfile = {
@@ -332,9 +332,9 @@ type RelayContextSelection = {
   plugins: string[];
 };
 
-type ContextKind = "mcp" | "skill" | "plugin";
+export type ContextKind = "mcp" | "skill" | "plugin";
 
-type CodexContextEntry = {
+export type CodexContextEntry = {
   id: string;
   kind: ContextKind;
   title: string;
@@ -355,7 +355,7 @@ type StepwiseGenerationMode = "auto" | "manual";
 type RelayMode = "official" | "mixedApi" | "pureApi" | "aggregate";
 type RelaySessionProvider = "custom" | "openai";
 const CHAT_UPSTREAM_BASE_URL_KEY = "codex_plus_chat_base_url";
-const SCRIPT_MARKET_REPOSITORY_URL = "https://github.com/BigPizzaV3/CodexPlusPlusScriptMarket";
+export const SCRIPT_MARKET_REPOSITORY_URL = "https://github.com/BigPizzaV3/CodexPlusPlusScriptMarket";
 
 const emptyContextSelection = (): RelayContextSelection => ({
   mcpServers: [],
@@ -363,7 +363,7 @@ const emptyContextSelection = (): RelayContextSelection => ({
   plugins: [],
 });
 
-type UserScriptInventory = {
+export type UserScriptInventory = {
   enabled?: boolean;
   scripts?: Array<{
     key: string;
@@ -380,13 +380,13 @@ type UserScriptInventory = {
   }>;
 };
 
-type SettingsResult = CommandResult<{
+export type SettingsResult = CommandResult<{
   settings: BackendSettings;
   settings_path: string;
   user_scripts: UserScriptInventory;
 }>;
 
-type WeixinConnectStatusResult = CommandResult<{
+export type WeixinConnectStatusResult = CommandResult<{
   state: string;
   message: string;
   accountId: string;
@@ -396,7 +396,7 @@ type WeixinConnectStatusResult = CommandResult<{
   processedMessages: number;
 }>;
 
-type WeixinQrResult = CommandResult<{
+export type WeixinQrResult = CommandResult<{
   qrStatus: string;
   qrContent: string;
   qrSvg: string;
@@ -429,7 +429,7 @@ export type RelayFilesResult = CommandResult<{
   authContents: string;
 }>;
 
-type LocalSession = {
+export type LocalSession = {
   id: string;
   title: string;
   cwd: string;
@@ -459,7 +459,7 @@ type PendingSessionShareResult = CommandResult<{
   url: string | null;
 }>;
 
-type ZedRemoteProject = {
+export type ZedRemoteProject = {
   id: string;
   label: string;
   hostId: string;
@@ -475,7 +475,7 @@ type ZedRemoteProject = {
   isCurrent: boolean;
 };
 
-type ZedRemoteProjectsResult = CommandResult<{
+export type ZedRemoteProjectsResult = CommandResult<{
   projects: ZedRemoteProject[];
 }>;
 
@@ -497,7 +497,7 @@ type ContextEntriesResult = CommandResult<{
   entries: CodexContextEntries;
 }>;
 
-type McpImportPreviewResult = CommandResult<{
+export type McpImportPreviewResult = CommandResult<{
   entries: Array<{ id: string; tomlBody: string }>;
   warnings: string[];
 }>;
@@ -605,7 +605,7 @@ export type EnvConflictsResult = CommandResult<{
   conflicts: EnvConflict[];
 }>;
 
-type RelayEnvironmentResult = CommandResult<{
+export type RelayEnvironmentResult = CommandResult<{
   clashVergeTun: {
     enabled: boolean;
     configPath: string | null;
@@ -714,7 +714,7 @@ type DiagnosticsResult = CommandResult<{
   report: string;
 }>;
 
-type WatcherResult = CommandResult<{
+export type WatcherResult = CommandResult<{
   enabled: boolean;
   disabled_flag: string;
 }>;
@@ -724,7 +724,7 @@ type InstallResult = CommandResult<{
   management_shortcut: { installed: boolean; path: string | null };
 }>;
 
-type UpdateResult = CommandResult<{
+export type UpdateResult = CommandResult<{
   currentVersion: string;
   latestVersion?: string | null;
   releaseSummary?: string;
@@ -735,7 +735,7 @@ type UpdateResult = CommandResult<{
   progress?: number;
 }>;
 
-type ScriptMarketItem = {
+export type ScriptMarketItem = {
   id: string;
   name: string;
   description: string;
@@ -750,7 +750,7 @@ type ScriptMarketItem = {
   updateAvailable: boolean;
 };
 
-type ScriptMarketResult = CommandResult<{
+export type ScriptMarketResult = CommandResult<{
   market: {
     status: string;
     message: string;
@@ -821,10 +821,10 @@ type ManagerNavigationIntent = {
 };
 
 type Route = "overview" | "relay" | "grok" | "relayEnvironment" | "sessions" | "context" | "skills" | "weixin" | "enhance" | "dreamSkin" | "zedRemote" | "userScripts" | "maintenance" | "about" | "settings";
-type Theme = "dark" | "light";
+export type Theme = "dark" | "light";
 
 const MANAGER_NAVIGATION_EVENT = "manager-navigation-requested";
-const SETTINGS_STEPWISE_SECTION_ID = "settings-stepwise";
+export const SETTINGS_STEPWISE_SECTION_ID = "settings-stepwise";
 
 const routes: Array<{ id: Route; label: string; icon: LucideIcon; badge?: string }> = [
   { id: "overview", label: t("概览"), icon: LayoutDashboard },
@@ -975,6 +975,16 @@ const OverviewScreen = lazy(() => import("./views/OverviewScreen"));
 const SessionsScreen = lazy(() => import("./views/SessionsScreen"));
 const DiagnosticsScreen = lazy(() => import("./views/DiagnosticsScreen"));
 const RelayScreen = lazy(() => import("./views/RelayScreen"));
+const RelayEnvironmentScreen = lazy(() => import("./views/RelayEnvironmentScreen"));
+const ContextScreen = lazy(() => import("./views/ContextScreen"));
+const WeixinConnectScreen = lazy(() => import("./views/WeixinConnectScreen"));
+const EnhanceScreen = lazy(() => import("./views/EnhanceScreen"));
+const DreamSkinScreen = lazy(() => import("./views/DreamSkinScreen"));
+const ZedRemoteScreen = lazy(() => import("./views/ZedRemoteScreen"));
+const UserScriptsScreen = lazy(() => import("./views/UserScriptsScreen"));
+const MaintenanceScreen = lazy(() => import("./views/MaintenanceScreen"));
+const AboutScreen = lazy(() => import("./views/AboutScreen"));
+const SettingsScreen = lazy(() => import("./views/SettingsScreen"));
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => loadInitialTheme());
@@ -3683,7 +3693,7 @@ export function App() {
   );
 }
 
-type Actions = {
+export type Actions = {
   refreshCurrent: () => Promise<void>;
   launch: () => Promise<void>;
   restart: (syncActiveRelay?: boolean) => Promise<boolean>;
@@ -3795,2778 +3805,27 @@ type Actions = {
   checkHealth: () => Promise<void>;
 };
 
-function SearchablePathPicker({
-  value,
-  options,
-  placeholder,
-  onChange,
-}: {
-  value: string;
-  options: string[];
-  placeholder: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const filteredOptions = useMemo(() => {
-    const query = value.trim().toLowerCase();
-    return options.filter((option) => !query || option.toLowerCase().includes(query)).slice(0, 30);
-  }, [options, value]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
 
-  return (
-    <div className="weixin-search-picker" ref={rootRef}>
-      <div className="weixin-search-input-wrap">
-        <Search className="weixin-search-input-icon h-4 w-4" />
-        <Input
-          aria-expanded={open}
-          aria-label={placeholder}
-          className="h-10"
-          onChange={(event) => {
-            onChange(event.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setOpen(false);
-          }}
-          placeholder={placeholder}
-          value={value}
-        />
-        <ChevronDown className={`weixin-search-input-chevron h-4 w-4${open ? " is-open" : ""}`} />
-      </div>
-      {open ? (
-        <div className="weixin-search-menu" role="listbox">
-          {filteredOptions.length ? filteredOptions.map((option) => (
-            <button
-              className="weixin-search-option"
-              key={option}
-              onClick={() => {
-                onChange(option);
-                setOpen(false);
-              }}
-              type="button"
-            >
-              <span>{option}</span>
-            </button>
-          )) : (
-            <div className="weixin-search-empty">{t("没有匹配的已有目录，可继续直接输入。")}</div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 }
 
-function SearchableSessionPicker({
-  sessions,
-  selectedId,
-  onSelect,
-}: {
-  sessions: LocalSession[];
-  selectedId: string;
-  onSelect: (session: LocalSession | null) => void;
-}) {
-  const selected = sessions.find((session) => session.id === selectedId) ?? null;
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
-  const filteredSessions = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return sessions
-      .filter((session) => !normalized || [session.title, session.cwd, session.id, session.modelProvider].some((value) => value.toLowerCase().includes(normalized)))
-      .slice(0, 30);
-  }, [query, sessions]);
-
-  useEffect(() => {
-    if (selected) setQuery(selected.title || selected.id);
-  }, [selected]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  return (
-    <div className="weixin-search-picker" ref={rootRef}>
-      <div className="weixin-search-input-wrap">
-        <Search className="weixin-search-input-icon h-4 w-4" />
-        <Input
-          aria-expanded={open}
-          aria-label={t("已有会话")}
-          className="h-10"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            if (selectedId) onSelect(null);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setOpen(false);
-          }}
-          placeholder={sessions.length ? t("搜索已有会话") : t("暂无可用的本地会话")}
-          value={query}
-        />
-        <ChevronDown className={`weixin-search-input-chevron h-4 w-4${open ? " is-open" : ""}`} />
-      </div>
-      {open ? (
-        <div className="weixin-search-menu weixin-session-menu" role="listbox">
-          {filteredSessions.length ? filteredSessions.map((session) => (
-            <button
-              aria-selected={session.id === selectedId}
-              className="weixin-search-option weixin-session-option"
-              key={session.id}
-              onClick={() => {
-                onSelect(session);
-                setQuery(session.title || session.id);
-                setOpen(false);
-              }}
-              type="button"
-            >
-              <strong>{session.title || t("未命名会话")}</strong>
-              <span>{session.cwd || t("未记录项目路径")}</span>
-              <small>{formatTime(session.updatedAtMs ?? 0)} · {session.modelProvider || t("provider 未记录")}</small>
-            </button>
-          )) : (
-            <div className="weixin-search-empty">{t("没有匹配的本地会话。")}</div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-const WeixinConnectScreen = memo(function WeixinConnectScreen({
-  form,
-  status,
-  qr,
-  sessions,
-  onFormChange,
-  onSave,
-  onQrLogin,
-  onStart,
-  onStop,
-  onChooseWorkDir,
-  onChooseCodexPath,
-  onUseDesktopCodexCli,
-  onOpenQr,
-  onCopyQr,
-}: {
-  form: BackendSettings;
-  status: WeixinConnectStatusResult | null;
-  qr: WeixinQrResult | null;
-  sessions: LocalSession[];
-  onFormChange: (value: BackendSettings) => void;
-  onSave: () => void;
-  onQrLogin: () => void;
-  onStart: () => void;
-  onStop: () => void;
-  onChooseWorkDir: () => void;
-  onChooseCodexPath: () => void;
-  onUseDesktopCodexCli: () => void;
-  onOpenQr: (url: string) => void;
-  onCopyQr: (url: string) => void;
-}) {
-  const [selectedSessionId, setSelectedSessionId] = useState("");
-  const workDirOptions = useMemo(
-    () => Array.from(new Set(sessions.map((session) => session.cwd.trim()).filter(Boolean))).sort(),
-    [sessions],
-  );
-  const runtimeState = status?.state ?? "stopped";
-  const running = ["starting", "running", "retrying"].includes(runtimeState);
-  const stopping = runtimeState === "stopping";
-  const statusLabel = {
-    starting: t("正在启动"),
-    running: t("运行中"),
-    retrying: t("正在重试"),
-    stopping: t("正在停止"),
-    error: t("异常"),
-    stopped: t("已停止"),
-  }[runtimeState] ?? runtimeState;
-
-  return (
-    <div className="weixin-connect-page">
-      <Panel className={`weixin-status-panel is-${runtimeState}`}>
-        <CardContent className="weixin-status-content">
-          <div className="weixin-connect-head">
-            <div className="weixin-status-primary">
-              <div className="weixin-status-icon" aria-hidden="true">
-                <MessageCircle className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="section-heading-row">
-                  <h2>{t("个人微信连接")}</h2>
-                  <UiBadge variant={runtimeState === "running" ? "default" : runtimeState === "error" ? "outline" : "secondary"}>
-                    {statusLabel}
-                  </UiBadge>
-                </div>
-                <p className="muted">{status?.message ?? t("微信连接未启动。")}</p>
-              </div>
-            </div>
-            <div className="toolbar weixin-connect-actions">
-              <Button onClick={onSave} variant="outline">
-                <Save className="h-4 w-4" />
-                {t("保存")}
-              </Button>
-              <Button onClick={onQrLogin} variant="outline">
-                <ScanLine className="h-4 w-4" />
-                {form.weixinConnectToken ? t("重新登录") : t("扫码登录")}
-              </Button>
-              {running || stopping ? (
-                <Button disabled={stopping} onClick={onStop} variant="outline">
-                  <PowerOff className="h-4 w-4" />
-                  {stopping ? t("正在停止") : t("停止")}
-                </Button>
-              ) : (
-                <Button disabled={!form.weixinConnectToken} onClick={onStart}>
-                  <Play className="h-4 w-4" />
-                  {t("启动")}
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="weixin-runtime-meta">
-            <div>
-              <span>{t("账号")}</span>
-              <code title={status?.accountId || form.weixinConnectAccountId || t("未登录")}>
-                {status?.accountId || form.weixinConnectAccountId || t("未登录")}
-              </code>
-            </div>
-            <div>
-              <span>{t("已处理消息")}</span>
-              <strong>{status?.processedMessages ?? 0}</strong>
-            </div>
-            <div>
-              <span>{t("最近联系人")}</span>
-              <code title={status?.lastPeerId || t("暂无")}>{status?.lastPeerId || t("暂无")}</code>
-            </div>
-          </div>
-        </CardContent>
-      </Panel>
-
-      {qr?.qrContent ? (
-        <Panel>
-          <CardHeader>
-            <CardTitle>{qr.qrStatus === "scaned" ? t("已扫码，请在手机上确认") : t("微信扫码登录")}</CardTitle>
-            <CardDescription>{t("在手机微信中打开登录链接，或复制到可生成二维码的设备完成确认。")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {qr.qrSvg ? (
-              <div className="weixin-qr-image" dangerouslySetInnerHTML={{ __html: qr.qrSvg }} />
-            ) : null}
-            <div className="weixin-qr-content">{qr.qrContent}</div>
-            <div className="toolbar">
-              <Button onClick={() => onOpenQr(qr.qrContent)}>
-                <ExternalLink className="h-4 w-4" />
-                {t("打开登录链接")}
-              </Button>
-              <Button onClick={() => onCopyQr(qr.qrContent)} variant="outline">
-                <Copy className="h-4 w-4" />
-                {t("复制链接")}
-              </Button>
-            </div>
-          </CardContent>
-        </Panel>
-      ) : null}
-
-      <Panel className="weixin-settings-panel">
-        <CardHeader className="weixin-settings-head">
-          <div>
-            <CardTitle>{t("连接设置")}</CardTitle>
-            <CardDescription>{t("每个微信联系人会映射到独立的 Codex 会话。")}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="weixin-connect-form">
-          <section className="weixin-form-section">
-            <div className="weixin-form-section-title">
-              <KeyRound className="h-4 w-4" />
-              <strong>{t("账号")}</strong>
-            </div>
-            <div className="weixin-form-fields">
-              <label className="field">
-                <span>{t("iLink API 地址")}</span>
-                <Input
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectBaseUrl: event.target.value })}
-                  value={form.weixinConnectBaseUrl}
-                />
-              </label>
-              <label className="field">
-                <span>{t("登录凭据")}</span>
-                <Input
-                  autoComplete="off"
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectToken: event.target.value })}
-                  placeholder={t("扫码后自动保存，也可粘贴已有 Bearer token")}
-                  type="password"
-                  value={form.weixinConnectToken}
-                />
-              </label>
-              <label className="field">
-                <span>{t("允许的微信用户 ID")}</span>
-                <Input
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectAllowFrom: event.target.value })}
-                  placeholder="user@im.wechat"
-                  value={form.weixinConnectAllowFrom}
-                />
-              </label>
-              <label className="field">
-                <span>{t("账号标识")}</span>
-                <Input
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectAccountId: event.target.value })}
-                  placeholder={t("扫码后自动填写")}
-                  value={form.weixinConnectAccountId}
-                />
-              </label>
-              <label className="field">
-                <span>{t("SKRouteTag")}</span>
-                <Input
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectRouteTag: event.target.value })}
-                  placeholder={t("仅在网关要求时填写")}
-                  value={form.weixinConnectRouteTag}
-                />
-              </label>
-            </div>
-          </section>
-
-          <section className="weixin-form-section">
-            <div className="weixin-form-section-title">
-              <MessageCircle className="h-4 w-4" />
-              <strong>{t("会话管理")}</strong>
-            </div>
-            <div className="weixin-form-fields">
-              <label className="field">
-                <span>{t("工作目录")}</span>
-                <div className="weixin-path-row">
-                  <SearchablePathPicker
-                    onChange={(value) => {
-                      setSelectedSessionId("");
-                      onFormChange({ ...form, weixinConnectWorkDir: value });
-                    }}
-                    options={workDirOptions}
-                    placeholder={t("搜索或输入工作目录")}
-                    value={form.weixinConnectWorkDir}
-                  />
-                  <Button onClick={onChooseWorkDir} size="icon" title={t("选择工作目录")} type="button" variant="outline">
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              </label>
-              <label className="field">
-                <span>{t("已有会话")}</span>
-                <SearchableSessionPicker
-                  onSelect={(session) => {
-                    setSelectedSessionId(session?.id ?? "");
-                    if (session?.cwd) onFormChange({ ...form, weixinConnectWorkDir: session.cwd });
-                  }}
-                  selectedId={selectedSessionId}
-                  sessions={sessions}
-                />
-                <small className="weixin-field-hint">{t("选择后自动带入该会话的工作目录，微信联系人仍保持独立会话。")}</small>
-              </label>
-              <label className="field">
-                <span>{t("模型")}</span>
-                <Input
-                  className="h-10"
-                  onChange={(event) => onFormChange({ ...form, weixinConnectModel: event.target.value })}
-                  placeholder={t("留空时使用 Codex 当前默认模型")}
-                  value={form.weixinConnectModel}
-                />
-              </label>
-              <label className="field">
-                <span>{t("沙箱权限")}</span>
-                <select
-                  className="field-select"
-                  onChange={(event) => onFormChange({
-                    ...form,
-                    weixinConnectSandbox: event.target.value as BackendSettings["weixinConnectSandbox"],
-                  })}
-                  value={form.weixinConnectSandbox}
-                >
-                  <option value="read-only">{t("只读")}</option>
-                  <option value="workspace-write">{t("允许修改工作目录")}</option>
-                  <option value="danger-full-access">{t("完全访问")}</option>
-                </select>
-              </label>
-            </div>
-          </section>
-
-          <section className="weixin-form-section">
-            <div className="weixin-form-section-title">
-              <Settings className="h-4 w-4" />
-              <strong>Codex CLI</strong>
-            </div>
-            <div className="weixin-form-fields">
-              <label className="field">
-                <span>{t("Codex CLI 路径")}</span>
-                <div className="weixin-path-row weixin-cli-path-row">
-                  <Input
-                    className="h-10"
-                    onChange={(event) => onFormChange({ ...form, weixinConnectCodexPath: event.target.value })}
-                    placeholder={t("留空时从 PATH 查找 codex")}
-                    value={form.weixinConnectCodexPath}
-                  />
-                  <Button
-                    className="weixin-bundled-cli-button"
-                    onClick={onUseDesktopCodexCli}
-                    size="sm"
-                    title={t("使用桌面版内置 CLI")}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <PackageOpen className="h-4 w-4" />
-                    {t("使用桌面版内置 CLI")}
-                  </Button>
-                  <Button onClick={onChooseCodexPath} size="icon" title={t("选择 Codex CLI")} type="button" variant="outline">
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-              </label>
-            </div>
-          </section>
-        </CardContent>
-      </Panel>
-    </div>
-  );
-});
-
-const RelayEnvironmentScreen = memo(function RelayEnvironmentScreen({ result, actions }: { result: RelayEnvironmentResult | null; actions: Actions }) {
-  const proxyVariables = result?.proxyEnvironment.variables ?? [];
-  const proxyVariableLabels = proxyVariables.map((item) => {
-    const source = item.source === "user" ? t("用户环境") : item.source === "system" ? t("系统环境") : t("进程环境");
-    return tf("{0}（{1}）", [item.name, source]);
-  });
-  const checks = [
-    {
-      id: "clash-verge-tun",
-      title: t("Clash Verge Rev TUN 模式"),
-      passed: result ? !result.clashVergeTun.enabled : false,
-      detail: result
-        ? result.clashVergeTun.enabled
-          ? tf("检测到 TUN 模式已开启，请在 Clash Verge Rev 中关闭。配置：{0}", [result.clashVergeTun.configPath || t("未记录路径")])
-          : result.clashVergeTun.configPath
-            ? tf("TUN 模式已关闭。配置：{0}", [result.clashVergeTun.configPath])
-            : t("未发现 Clash Verge Rev 配置，按未开启处理。")
-        : t("等待检测。"),
-    },
-    {
-      id: "proxy-environment",
-      title: t("系统代理环境变量"),
-      passed: result ? proxyVariables.length === 0 : false,
-      detail: result
-        ? proxyVariables.length
-          ? tf("检测到代理环境变量：{0}。请清理后重新启动 Codex++。", [proxyVariableLabels.join(t("、"))])
-          : t("未检测到 HTTP_PROXY、HTTPS_PROXY、ALL_PROXY、NO_PROXY 或 FTP_PROXY。")
-        : t("等待检测。"),
-    },
-    {
-      id: "codex-dotenv",
-      title: t("Codex .env 文件"),
-      passed: result ? !result.codexEnvFile.exists : false,
-      detail: result
-        ? result.codexEnvFile.exists
-          ? tf("检测到可能干扰供应商配置的 .env 文件：{0}", [result.codexEnvFile.path])
-          : tf("未发现 .env 文件：{0}", [result.codexEnvFile.path])
-        : t("等待检测。"),
-    },
-  ];
-  const allPassed = Boolean(result) && checks.every((check) => check.passed);
-
-  return (
-    <Panel>
-      <CardHead
-        title={t("中转站环境配置检测")}
-        detail={result ? (allPassed ? t("三项检测全部通过") : t("检测到需要处理的环境问题")) : t("正在读取本机环境")}
-      />
-      <CardContent>
-        <div className="relay-environment-checks">
-          {checks.map((check) => (
-            <div className={`relay-environment-check ${result ? (check.passed ? "ok" : "failed") : "pending"}`} key={check.id}>
-              <div className="relay-environment-check-icon">
-                {result ? (check.passed ? <CheckCircle2 className="h-5 w-5" /> : <ShieldAlert className="h-5 w-5" />) : <RefreshCw className="h-5 w-5" />}
-              </div>
-              <div className="relay-environment-check-copy">
-                <strong>{check.title}</strong>
-                <span>{check.detail}</span>
-              </div>
-              <Badge status={result ? (check.passed ? "ok" : "failed") : "not_checked"} />
-            </div>
-          ))}
-        </div>
-        <Toolbar>
-          <Button onClick={() => void actions.refreshRelayEnvironment()}>
-            <RefreshCw className="h-4 w-4" />
-            {t("重新检测")}
-          </Button>
-        </Toolbar>
-      </CardContent>
-    </Panel>
-  );
-});
-
-const ContextScreen = memo(function ContextScreen({
-  form,
-  liveEntries,
-  relayFiles,
-  onFormChange,
-  actions,
-}: {
-  form: BackendSettings;
-  liveEntries: CodexContextEntries | null;
-  relayFiles: RelayFilesResult | null;
-  onFormChange: (value: BackendSettings) => void;
-  actions: Actions;
-}) {
-  return (
-    <Panel fill>
-      <CardHead title={t("Codex MCP&插件")} detail={t("独立管理 Codex 的 MCP 服务器与插件；切换任意供应商都会带上。")} />
-      <CardContent>
-        <RelayContextManager
-          form={normalizeSettings(form)}
-          liveEntries={liveEntries}
-          relayFiles={relayFiles}
-          onFormChange={onFormChange}
-          actions={actions}
-        />
-      </CardContent>
-    </Panel>
-  );
-});
-
-
-const EnhanceScreen = memo(function EnhanceScreen({
-  dirty,
-  form,
-  pluginMarketplaceProgress,
-  remotePluginMarketplace,
-  remotePluginMarketplaceProgress,
-  onFormChange,
-  actions,
-}: {
-  dirty: boolean;
-  form: BackendSettings;
-  pluginMarketplaceProgress: TaskProgress;
-  remotePluginMarketplace: RemotePluginMarketplaceResult | null;
-  remotePluginMarketplaceProgress: TaskProgress;
-  onFormChange: (value: BackendSettings) => void;
-  actions: Actions;
-}) {
-  const setEnhanceFlag = (key: keyof BackendSettings, value: boolean) => onFormChange({ ...form, [key]: value });
-  const setPersistedEnhanceFlag = (key: keyof BackendSettings, value: boolean) => {
-    const next = { ...form, [key]: value };
-    onFormChange(next);
-    void actions.saveSettingsValue(next, true);
-  };
-  const masterEnabled = form.enhancementsEnabled;
-  const patchMode = form.launchMode === "patch";
-  const remoteMarketplaceStatus = remotePluginMarketplace?.marketplaceRoot
-    ? remotePluginMarketplace.configRegistered
-      ? t("已注册")
-      : t("已缓存未注册")
-    : t("未发现缓存");
-  const remoteMarketplaceSummary = remotePluginMarketplace?.marketplaceRoot
-    ? tf("已缓存 {0} 个插件 / {1} 个技能。", [
-        String(remotePluginMarketplace.pluginCount),
-        String(remotePluginMarketplace.skillCount),
-      ])
-    : t("未发现本地缓存；点击按钮会从 Codex++ 内置快照释放并注册，无需官方账号预缓存。");
-  return (
-    <>
-      <Panel className="enhance-panel">
-        <CardHead title={t("Codex增强")} detail={t("会话删除、导出和用户脚本等界面能力")} />
-        <CardContent className="enhance-content">
-          <div className="enhance-control-deck">
-            <section className="enhance-control-section">
-              <div className="enhance-control-heading">
-                <strong>{t("基础设置")}</strong>
-              </div>
-              <div className="enhance-control-list">
-                <label className="switch-row compact">
-                  <input
-                    checked={form.enhancementsEnabled}
-                    onChange={(event) => onFormChange({ ...form, enhancementsEnabled: event.currentTarget.checked })}
-                    type="checkbox"
-                  />
-                  <span>
-                    <strong>{t("启用 Codex增强")}</strong>
-                    <small>{t("关闭后会停用删除、导出、插件相关和菜单位置增强。")}</small>
-                  </span>
-                  <ToggleVisual />
-                </label>
-              </div>
-            </section>
-            <section className="enhance-control-section enhance-mode-section">
-              <div className="enhance-control-heading">
-                <strong>{t("Codex增强模式")}</strong>
-              </div>
-              <ModeSelector launchMode={form.launchMode} actions={actions} />
-              {form.launchMode === "relay" ? (
-                <div className="hint-line enhance-mode-hint">
-                  <ShieldCheck className="h-4 w-4" />
-                  <span>{t("当前为兼容增强模式，插件市场解锁不会启用；其他页面功能仍可用。")}</span>
-                </div>
-              ) : null}
-            </section>
-          </div>
-          <div className="enhance-feature-groups">
-            <FeatureGroup title={t("插件与模型")} detail={t("管理插件市场、模型列表和服务档位相关增强。")}>
-              <FeatureToggle title={t("插件市场解锁")} detail={t("API Key 模式下扩展插件市场请求，尽量显示完整插件列表；官方/混合模式通常不需要。")} checked={form.codexAppPluginMarketplaceUnlock} disabled={!masterEnabled || !patchMode} onChange={(value) => setEnhanceFlag("codexAppPluginMarketplaceUnlock", value)} />
-              <FeatureToggle title={t("模型白名单解锁")} detail={t("从环境变量和 config.toml 的 /v1/models 拉取模型并补进模型列表。")} checked={form.codexAppModelWhitelistUnlock} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppModelWhitelistUnlock", value)} />
-              <FeatureToggle title={t("Fast 按钮")} detail={t("显示服务模式切换按钮；Fast 仅支持 gpt-5.4 / gpt-5.5，其他模型按 Standard 发送。")} checked={form.codexAppServiceTierControls} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppServiceTierControls", value)} />
-              <div className="feature-action-row">
-                <div>
-                  <strong>{t("官方远端插件缓存")}</strong>
-                  <small>{t("使用 Codex++ 内置快照补齐远端插件，API 模式也可显示和安装 Product Design 插件。")}</small>
-                  <small>{remoteMarketplaceSummary}</small>
-                </div>
-                <Badge status={remotePluginMarketplace?.configRegistered ? "ok" : "not_checked"} />
-                <Button
-                  disabled={remotePluginMarketplaceProgress.active}
-                  onClick={() => void actions.repairRemotePluginMarketplace()}
-                  variant="secondary"
-                >
-                  {remotePluginMarketplaceProgress.active ? t("正在处理…") : t("释放并注册内置缓存")}
-                </Button>
-                <Button
-                  disabled={remotePluginMarketplaceProgress.active}
-                  onClick={() => void actions.refreshRemotePluginMarketplace()}
-                  variant="outline"
-                >
-                  {t("刷新")}
-                </Button>
-                <span className="feature-action-status">{remoteMarketplaceStatus}</span>
-              </div>
-            </FeatureGroup>
-            <FeatureGroup title={t("对话与输入")} detail={t("调整会话管理、输入行为和对话阅读体验。")}>
-              <FeatureToggle title={t("会话删除")} detail={t("在会话列表悬停显示删除按钮，并支持撤销。")} checked={form.codexAppSessionDelete} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppSessionDelete", value)} />
-              <FeatureToggle title={t("Markdown 导出")} detail={t("在会话列表显示导出按钮，导出带时间戳的 Markdown。")} checked={form.codexAppMarkdownExport} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppMarkdownExport", value)} />
-              <FeatureToggle title={t("粘贴修复")} detail={t("从 Word 等富文本粘贴到 Codex composer 时只保留纯文本，避免被识别为图片/文件附件。需重启 Codex 才生效。")} checked={form.codexAppPasteFix} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppPasteFix", value)} />
-              <FeatureToggle title={t("会话 ID 标识")} detail={t("在侧边栏会话标题前显示短 ID 和 UUIDv7 创建时间，方便定位历史会话。")} checked={form.codexAppThreadIdBadge} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppThreadIdBadge", value)} />
-              <FeatureToggle title={t("对话居中宽度")} detail={t("把主对话和输入框限制到固定最大宽度，适合大屏阅读。")} checked={form.codexAppConversationView} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppConversationView", value)} />
-              <FeatureToggle title={t("切换对话保留位置")} detail={t("切换 thread 时恢复上一次浏览位置。")} checked={form.codexAppThreadScrollRestore} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppThreadScrollRestore", value)} />
-            </FeatureGroup>
-            <FeatureGroup title={t("悬浮球")} detail={t("控制下一步建议与回答大纲。")}>
-              <FeatureToggle title="Stepwise" detail={t("根据当前回答生成下一步建议。")} checked={form.codexAppStepwiseEnabled} disabled={!masterEnabled} onChange={(value) => setPersistedEnhanceFlag("codexAppStepwiseEnabled", value)} />
-              <FeatureToggle title={t("回答大纲")} detail={t("整理当前回答的结构。")} checked={form.codexAppAnswerOutlineEnabled} disabled={!masterEnabled} onChange={(value) => setPersistedEnhanceFlag("codexAppAnswerOutlineEnabled", value)} />
-            </FeatureGroup>
-            <FeatureGroup title={t("界面与启动")} detail={t("控制语言、启动速度和 Codex 原生界面调整。")}>
-              {isWindowsPlatform ? <FeatureToggle title={t("桌宠跟随真实鼠标")} detail={t("仅支持 V2 桌宠；不会修改宠物文件。将 V2 的 Computer Use 光标朝向动作映射到真实鼠标，V1 开启后安全不生效；拖拽、原生悬停或 Computer Use 活跃时自动让步。")} checked={form.codexAppPetRealMouseLook} disabled={!masterEnabled} onChange={(value) => setPersistedEnhanceFlag("codexAppPetRealMouseLook", value)} /> : null}
-              <FeatureToggle title={t("强制中文界面")} detail={t("强制启用 Codex App 内置 zh-CN 语言包，避免 Statsig/VPN 不通时回退英文。需重启 Codex 才能完整生效。")} checked={form.codexAppForceChineseLocale} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppForceChineseLocale", value)} />
-              <FeatureToggle title={t("快速启动")} detail={t("默认关闭；无 VPN 时可开启，让 Statsig 初始化快速失败，减少启动时长。需重启 Codex 才生效。")} checked={form.codexAppFastStartup} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppFastStartup", value)} />
-              <FeatureToggle title={t("原生菜单汉化")} detail={t("启动时通过本地主进程调试端口汉化 Codex 原生菜单；不修改安装包。需重启 Codex 才生效。")} checked={form.codexAppNativeMenuLocalization} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppNativeMenuLocalization", value)} />
-            </FeatureGroup>
-            <FeatureGroup title={t("远程项目")} detail={t("连接 Zed Remote 和 upstream worktree 辅助能力。")}>
-              <FeatureToggle title="Zed Remote open" detail={t("远程 SSH 文件引用可直接用 Zed Remote Development 打开。")} checked={form.codexAppZedRemoteOpen} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppZedRemoteOpen", value)} />
-              <FeatureToggle title={t("Zed 项目记录")} detail={t("维护 Codex++ 自己的远程项目最近列表。")} checked={form.zedRemoteProjectRegistryEnabled} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("zedRemoteProjectRegistryEnabled", value)} />
-              <FeatureToggle title={t("同步 Zed settings")} detail={t("高级选项，默认关闭；当前实现不主动改写 Zed settings。")} checked={form.zedRemoteSyncToZedSettings} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("zedRemoteSyncToZedSettings", value)} />
-              <FeatureToggle title="Upstream worktree" detail={t("从最新 upstream 分支创建 Git worktree。")} checked={form.codexAppUpstreamWorktreeCreate} disabled={!masterEnabled} onChange={(value) => setEnhanceFlag("codexAppUpstreamWorktreeCreate", value)} />
-              <div className="feature-select-row">
-                <Field label={t("Zed 默认打开策略")}>
-                  <AppSelect
-                    disabled={!masterEnabled}
-                    onChange={(value) => onFormChange({ ...form, zedRemoteOpenStrategy: value })}
-                    options={[
-                      { value: "addToFocusedWorkspace", label: t("加入当前工作区") },
-                      { value: "reuseWindow", label: t("复用窗口") },
-                      { value: "newWindow", label: t("新窗口") },
-                      { value: "default", label: t("Zed 默认行为") },
-                    ]}
-                    value={form.zedRemoteOpenStrategy}
-                  />
-                </Field>
-              </div>
-            </FeatureGroup>
-          </div>
-          <div className="enhance-utility-row">
-            <div>
-              <Wrench className="h-4 w-4" />
-              <span>{t("新机器没有本地插件市场时，可从 openai/plugins 初始化到当前 CODEX_HOME。")}</span>
-            </div>
-            <Button disabled={pluginMarketplaceProgress.active} variant="secondary" onClick={() => void actions.repairPluginMarketplace()}>
-              {pluginMarketplaceProgress.active ? t("正在修复…") : t("修复插件市场")}
-            </Button>
-          </div>
-          <TaskProgressBox progress={pluginMarketplaceProgress} title={t("插件市场修复进度")} />
-          <TaskProgressBox progress={remotePluginMarketplaceProgress} title={t("官方远端插件缓存进度")} />
-          <div className="hint-line enhance-footer-hint">
-            <Info className="h-4 w-4" />
-            <span>{t("如果使用官方模式或官方混入 API 模式，通常不需要开启插件市场解锁。")}</span>
-          </div>
-          {dirty ? (
-            <div className="enhance-save-bar">
-              <span>{t("Codex增强")}</span>
-              <Button onClick={() => void actions.saveSettings()}>
-                <Save className="h-4 w-4" />
-                {t("保存增强设置")}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Panel>
-    </>
-  );
-});
-
-const DreamSkinScreen = memo(function DreamSkinScreen({
-  form,
-  library,
-  market,
-  community,
-  draft,
-  dirty,
-  pendingRestart,
-  selectedTheme,
-  status,
-  verification,
-  onFormChange,
-  onDraftChange,
-  actions,
-}: {
-  form: BackendSettings;
-  library: DreamSkinThemeLibrary | null;
-  market: DreamSkinMarketResult | null;
-  community: DreamSkinCommunityResult | null;
-  draft: DreamSkinThemeDraft | null;
-  dirty: boolean;
-  pendingRestart: PendingDreamSkinRestart | null;
-  selectedTheme: string;
-  status: DreamSkinRuntimeResult | null;
-  verification: DreamSkinVerificationResult | null;
-  onFormChange: (value: BackendSettings) => void;
-  onDraftChange: (value: DreamSkinThemeDraft | null) => void;
-  actions: Actions;
-}) {
-  const [themeView, setThemeView] = useState<"market" | "community" | "local">("community");
-  const companionInputRef = useRef<HTMLInputElement>(null);
-  const [companionError, setCompanionError] = useState("");
-  const masterEnabled = form.enhancementsEnabled;
-  const theme = draft?.config ?? defaultDreamSkinTheme();
-  const themeColors = theme.colors ?? defaultDreamSkinColors();
-  const customImagePath = draft?.imagePath.trim() ?? "";
-  const previewUrl = customImagePath
-    ? convertFileSrc(customImagePath)
-    : isWindowsPlatform
-      ? dreamSkinWindowsPreviewUrl
-      : dreamSkinMacPreviewUrl;
-  const selectedItem = library?.themes.find((item) => item.key === selectedTheme) ?? null;
-  const savedThemeSelected = selectedItem?.kind === "stored";
-  const updateTheme = (next: DreamSkinThemeConfig) => {
-    if (draft) onDraftChange({ ...draft, config: next });
-  };
-  const updateThemeText = (
-    key: "id" | "name" | "brandSubtitle" | "tagline" | "projectPrefix" | "projectLabel" | "statusText" | "quote",
-    value: string,
-  ) => updateTheme({ ...theme, [key]: value });
-  const updateThemeColor = (key: keyof DreamSkinColors, value: string) => {
-    updateTheme({ ...theme, colors: { ...themeColors, [key]: value } });
-  };
-  const themeAppearance = theme.appearance === "light" || theme.appearance === "dark"
-    ? theme.appearance
-    : "auto";
-  const windowsAccent = typeof theme.palette?.accent === "string" ? theme.palette.accent : "";
-  const updateWindowsAccent = (value: string) => {
-    const palette = { ...(theme.palette ?? {}) };
-    if (value.trim()) palette.accent = value;
-    else delete palette.accent;
-    const next: DreamSkinThemeConfig = { ...theme, palette };
-    if (!Object.keys(palette).length) delete next.palette;
-    updateTheme(next);
-  };
-  const companion = theme.companion;
-  const companionDataUrl = typeof companion?.dataUrl === "string" ? companion.dataUrl : "";
-  const companionEnabled = Boolean(companionDataUrl) && companion?.enabled !== false;
-  const updateCompanion = (patch: Partial<NonNullable<DreamSkinThemeConfig["companion"]>>) => {
-    const nextCompanion = {
-      dataUrl: companionDataUrl,
-      enabled: companion?.enabled ?? true,
-      width: companion?.width ?? 96,
-      side: companion?.side ?? "right",
-      offsetX: companion?.offsetX ?? 0,
-      offsetY: companion?.offsetY ?? 4,
-      ...patch,
-    };
-    updateTheme({ ...theme, companion: nextCompanion });
-  };
-  const clearCompanion = () => {
-    const next = { ...theme };
-    delete next.companion;
-    setCompanionError("");
-    updateTheme(next);
-  };
-  const chooseCompanion = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) return;
-    if (!dreamSkinCompanionMimeTypes.has(file.type)) {
-      setCompanionError(t("仅支持 PNG、JPEG、WebP 或 GIF 图片"));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      if (!dataUrl || dataUrl.length > dreamSkinCompanionDataUrlLimit) {
-        setCompanionError(t("图片过大，请选择 180 KB 以内的图片"));
-        return;
-      }
-      setCompanionError("");
-      updateCompanion({ dataUrl });
-    };
-    reader.onerror = () => setCompanionError(t("读取图片失败，请重新选择"));
-    reader.readAsDataURL(file);
-  };
-  const stateLabel = dreamSkinStateLabel(status?.state ?? "not_running");
-  const runtimeChecks = status?.checks ?? [];
-  const verificationChecks = verification?.checks ?? [];
-
-  return (
-    <>
-      <Panel className="dream-skin-panel dream-skin-attribution-panel">
-        <CardContent className="dream-skin-attribution-content">
-          <p className="dream-skin-attribution-line">
-            {t("项目来源：Fei-Away/Codex-Dream-Skin · 原作者 Fei-Away · MIT License · 第三方图片需自行确认授权")}
-          </p>
-        </CardContent>
-      </Panel>
-
-      <Panel className="dream-skin-panel">
-        <CardHead title={t("运行状态")} detail={t("配置保存在 Codex++，实时操作通过本机回环 CDP 执行")} />
-        <CardContent>
-          <div className="dream-skin-runtime-grid">
-            <label className="switch-row compact">
-              <input
-                checked={form.codexAppDreamSkinEnabled}
-                disabled={!masterEnabled}
-                onChange={(event) => onFormChange({
-                  ...form,
-                  codexAppDreamSkinEnabled: event.currentTarget.checked,
-                  codexAppDreamSkinPaused: false,
-                })}
-                type="checkbox"
-              />
-              <span>
-                <strong>{t("启用 Codex 皮肤")}</strong>
-                <small>{t("应用会保存当前图片与主题配置；恢复原始外观不会删除主题。")}</small>
-              </span>
-              <ToggleVisual />
-            </label>
-            <div className={`dream-skin-runtime-state is-${status?.state ?? "not_running"}`}>
-              {dreamSkinCheckIcon(status?.state === "pass" ? "pass" : status?.state === "fail" ? "fail" : "warning")}
-              <span>
-                <small>{t("当前状态")}</small>
-                <strong>{stateLabel}</strong>
-              </span>
-              <Badge status={status?.liveApplied ? "ok" : status?.paused ? "disabled" : "not_checked"} />
-            </div>
-          </div>
-          {!masterEnabled ? (
-            <div className="hint-line">
-              <Info className="h-4 w-4" />
-              <span>{t("请先在 Codex增强 页面开启总开关。")}</span>
-            </div>
-          ) : null}
-          <Toolbar>
-            <Button disabled={!masterEnabled || !draft} onClick={() => void actions.activateDreamSkinTheme()} title={t("保存并应用主题；需要重启时只会标记为待应用")}>
-              <Play className="h-4 w-4" />
-              {t("应用皮肤")}
-            </Button>
-            <Button variant="outline" onClick={() => void actions.restoreDreamSkin()}>
-              <RotateCcw className="h-4 w-4" />
-              {t("恢复 Codex 外观")}
-            </Button>
-            <Button size="icon" title={t("刷新状态")} variant="outline" onClick={() => void actions.refreshDreamSkinStatus()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </Toolbar>
-          {pendingRestart ? (
-            <div className="dream-skin-pending-state" role="status">
-              <Rocket className="h-5 w-5" aria-hidden="true" />
-              <div>
-                <strong>{t("待应用主题")}：{pendingRestart.pendingThemeName}</strong>
-                <small>
-                  {t("当前运行")}：{pendingRestart.currentThemeName}。{t("配置已保存，可以继续浏览和编辑，稍后重启即可生效。")}
-                </small>
-              </div>
-              <Button onClick={() => void actions.restart()}>
-                <Rocket className="h-4 w-4" />
-                {t("重启并应用")}
-              </Button>
-            </div>
-          ) : null}
-        </CardContent>
-      </Panel>
-
-      <Panel className="dream-skin-panel">
-        <CardHead title={t("图片与主题")} detail={t("自定义图片会被导入 Codex++ 托管目录；主题字段与目标项目 theme.json 对齐")} />
-        <CardContent>
-          <div aria-label={t("主题视图")} className="dream-skin-view-tabs" role="tablist">
-            <button
-              aria-selected={themeView === "community"}
-              className={themeView === "community" ? "is-active" : ""}
-              onClick={() => setThemeView("community")}
-              role="tab"
-              type="button"
-            >
-              <Github className="h-4 w-4" />
-              {t("DreamSkin 社区")}
-              <span>{community?.items.length ?? 0}</span>
-            </button>
-            <button
-              aria-selected={themeView === "market"}
-              className={themeView === "market" ? "is-active" : ""}
-              onClick={() => setThemeView("market")}
-              role="tab"
-              type="button"
-            >
-              <Store className="h-4 w-4" />
-              {t("主题市场")}
-              <span>{market?.themes.length ?? 0}</span>
-            </button>
-            <button
-              aria-selected={themeView === "local"}
-              className={themeView === "local" ? "is-active" : ""}
-              onClick={() => setThemeView("local")}
-              role="tab"
-              type="button"
-            >
-              <Palette className="h-4 w-4" />
-              {t("我的主题")}
-              <span>{library?.themes.length ?? 0}</span>
-            </button>
-          </div>
-
-          {themeView === "community" ? (
-            <DreamSkinCommunitySection
-              community={community}
-              actions={actions}
-              onInstalled={() => setThemeView("local")}
-            />
-          ) : themeView === "market" ? (
-            <section className="dream-skin-market">
-              <div className="dream-skin-library-head">
-                <div>
-                  <strong>{t("社区主题")}</strong>
-                  <small>
-                    {market?.updatedAt
-                      ? tf("清单更新于 {0}，安装后会保存到“我的主题”。", [market.updatedAt])
-                      : t("从 CodexPlusPlus-Themes 仓库加载可安装主题。")}
-                  </small>
-                </div>
-                <Toolbar>
-                  <Button onClick={() => void actions.refreshDreamSkinMarket()} variant="secondary">
-                    <RefreshCw className="h-4 w-4" />
-                    {t("刷新市场")}
-                  </Button>
-                  <Button onClick={() => void actions.openExternalUrl(market?.repositoryUrl || "https://github.com/BigPizzaV3/CodexPlusPlus-Themes")} variant="outline">
-                    <Github className="h-4 w-4" />
-                    {t("投稿主题")}
-                  </Button>
-                </Toolbar>
-              </div>
-              {market?.cached || market?.warning ? (
-                <div className="dream-skin-market-warning">
-                  <Info className="h-4 w-4" />
-                  <span>{market.warning || t("远程仓库暂不可用，当前显示本地缓存。")}</span>
-                </div>
-              ) : null}
-              {market?.themes.length ? (
-                <div className="dream-skin-market-grid">
-                  {market.themes.map((item) => (
-                    <DreamSkinMarketCard
-                      actions={actions}
-                      key={item.id}
-                      onInstalled={() => setThemeView("local")}
-                      theme={item}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="empty">
-                  {market?.status === "failed" ? market.message : t("正在加载主题市场…")}
-                </div>
-              )}
-            </section>
-          ) : (
-            <>
-          <section className="dream-skin-theme-library">
-            <div className="dream-skin-library-head">
-              <div>
-                <strong>{t("我的主题")}</strong>
-                <small>
-                  {pendingRestart
-                    ? t("选择其他卡片可继续调整待应用主题；当前界面不会自动重启。")
-                    : t("选择卡片只会载入草稿；需要完整切换时会保存为待应用主题。")}
-                </small>
-              </div>
-              <Toolbar>
-                <Button variant="outline" onClick={() => void actions.importDreamSkinThemePackage()}>
-                  <PackageOpen className="h-4 w-4" />
-                  {t("导入主题包")}
-                </Button>
-                <Button
-                  disabled={!masterEnabled || !draft}
-                  onClick={() => void actions.activateDreamSkinTheme()}
-                  title={t("保存主题；需要重启时不会打断当前操作")}
-                >
-                  <Play className="h-4 w-4" />
-                  {pendingRestart ? t("更新待应用") : t("应用主题")}
-                </Button>
-              </Toolbar>
-            </div>
-            <div className="dream-skin-theme-list">
-              {(library?.themes ?? []).map((item) => {
-                const cardPreview = item.previewPath
-                  ? convertFileSrc(item.previewPath)
-                  : isWindowsPlatform
-                    ? dreamSkinWindowsPreviewUrl
-                    : dreamSkinMacPreviewUrl;
-                const cardDirty = item.key === selectedTheme && dirty;
-                const currentRunning = pendingRestart
-                  ? pendingRestart.currentThemeKey === item.key
-                  : item.active;
-                const pendingApplication = pendingRestart?.pendingThemeKey === item.key;
-                return (
-                  <article
-                    className={`dream-skin-theme-card${item.key === selectedTheme ? " is-selected" : ""}${currentRunning ? " is-current" : ""}${pendingApplication ? " is-pending" : ""}`}
-                    key={item.key}
-                  >
-                    <button
-                      className="dream-skin-theme-select"
-                      onClick={() => actions.selectDreamSkinTheme(item)}
-                      type="button"
-                    >
-                      <span className="dream-skin-theme-image">
-                        <img alt={item.name} loading="lazy" src={cardPreview} />
-                        {currentRunning || pendingApplication ? (
-                          <span className="dream-skin-theme-badges">
-                            {currentRunning ? <b>{t("当前运行")}</b> : null}
-                            {pendingApplication ? <b className="is-pending">{t("待应用")}</b> : null}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="dream-skin-theme-copy">
-                        <strong title={item.name}>{item.name}</strong>
-                        <small>
-                          {item.builtin
-                            ? t("内置主题")
-                            : item.kind === "activeUnsaved"
-                              ? t("当前未保存主题")
-                              : t("用户主题")}
-                        </small>
-                      </span>
-                      {item.modified || cardDirty ? <em>{t("已修改")}</em> : null}
-                    </button>
-                    {item.kind === "stored" ? (
-                      <details className="dream-skin-theme-menu">
-                        <summary title={t("主题操作")}><MoreHorizontal className="h-4 w-4" /></summary>
-                        <div>
-                          <button onClick={() => void actions.renameDreamSkinTheme(item)} type="button">
-                            <Edit3 className="h-4 w-4" />
-                            {t("重命名")}
-                          </button>
-                          <button disabled={item.active || currentRunning} onClick={() => void actions.deleteDreamSkinTheme(item)} type="button">
-                            <Trash2 className="h-4 w-4" />
-                            {t("删除")}
-                          </button>
-                        </div>
-                      </details>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
-            {!library ? <p className="empty">{t("正在加载主题库…")}</p> : null}
-          </section>
-
-          <details className="dream-skin-customizer">
-            <summary>
-              <span className="dream-skin-customizer-title">
-                <Settings className="h-4 w-4" />
-                <span>
-                  <strong>{t("自定义主题")}</strong>
-                  <small>{t("图片、文字和配色等高级编辑项")}</small>
-                </span>
-              </span>
-              <em className={dirty ? "is-dirty" : ""}>{dirty ? t("有未保存修改") : t("按需展开")}</em>
-            </summary>
-            <div className="dream-skin-customizer-content">
-              <div className="dream-skin-customizer-actions">
-                <Button variant="secondary" onClick={() => void actions.createDreamSkinTheme()}>
-                  <ImagePlus className="h-4 w-4" />
-                  {t("从图片创建")}
-                </Button>
-              </div>
-
-              <div className="dream-skin-platform-note">
-                <Info className="h-4 w-4" />
-                <span>
-                  {isWindowsPlatform
-                    ? t("Windows 使用亮暗模式、图片取色和可选强调色；完整色板仅在 macOS 生效。")
-                    : t("macOS 会应用主题中的图片、文字和颜色配置。")}
-                </span>
-              </div>
-
-              <div className="dream-skin-companion-controls">
-                <div className="dream-skin-companion-heading">
-                  <div>
-                    <strong>{t("输入框旁照片")}</strong>
-                    <small>{t("为主题选择一张显示在 Codex 输入框旁的自定义照片")}</small>
-                  </div>
-                  {companionDataUrl ? (
-                    <img alt={t("输入框旁照片预览")} src={companionDataUrl} />
-                  ) : null}
-                </div>
-                <input
-                  accept="image/png,image/jpeg,image/webp,image/gif"
-                  className="sr-only"
-                  onChange={chooseCompanion}
-                  ref={companionInputRef}
-                  type="file"
-                />
-                <Toolbar>
-                  <Button onClick={() => companionInputRef.current?.click()} type="button" variant="secondary">
-                    <Camera className="h-4 w-4" />
-                    {companionDataUrl ? t("更换照片") : t("选择照片")}
-                  </Button>
-                  <Button disabled={!companionDataUrl} onClick={clearCompanion} type="button" variant="outline">
-                    <Trash2 className="h-4 w-4" />
-                    {t("清除照片")}
-                  </Button>
-                </Toolbar>
-                {companionError ? <small className="dream-skin-companion-error">{companionError}</small> : null}
-                <div className="dream-skin-companion-fields">
-                  <label className="switch-row compact">
-                    <input
-                      checked={companionEnabled}
-                      disabled={!companionDataUrl}
-                      onChange={(event) => updateCompanion({ enabled: event.currentTarget.checked })}
-                      type="checkbox"
-                    />
-                    <span>
-                      <strong>{t("显示在输入框旁")}</strong>
-                      <small>{t("应用主题后显示在输入框的左侧或右侧")}</small>
-                    </span>
-                    <ToggleVisual />
-                  </label>
-                  <Field label={t("照片宽度") }>
-                    <Input
-                      disabled={!companionDataUrl}
-                      inputMode="numeric"
-                      max={160}
-                      min={48}
-                      type="number"
-                      value={companion?.width ?? 96}
-                      onChange={(event) => updateCompanion({ width: Math.max(48, Math.min(160, Number(event.currentTarget.value) || 96)) })}
-                    />
-                  </Field>
-                  <Field label={t("显示位置") }>
-                    <AppSelect
-                      disabled={!companionDataUrl}
-                      value={companion?.side ?? "right"}
-                      onChange={(value) => updateCompanion({ side: value })}
-                      options={[
-                        { value: "auto", label: t("自动") },
-                        { value: "left", label: t("左侧") },
-                        { value: "right", label: t("右侧") },
-                      ]}
-                    />
-                  </Field>
-                  <Field label={t("水平偏移") }>
-                    <Input
-                      disabled={!companionDataUrl}
-                      inputMode="numeric"
-                      max={48}
-                      min={-48}
-                      type="number"
-                      value={companion?.offsetX ?? 0}
-                      onChange={(event) => updateCompanion({ offsetX: Math.max(-48, Math.min(48, Number(event.currentTarget.value) || 0)) })}
-                    />
-                  </Field>
-                  <Field label={t("垂直偏移") }>
-                    <Input
-                      disabled={!companionDataUrl}
-                      inputMode="numeric"
-                      max={160}
-                      min={-160}
-                      type="number"
-                      value={companion?.offsetY ?? 4}
-                      onChange={(event) => updateCompanion({ offsetY: Math.max(-160, Math.min(160, Number(event.currentTarget.value) || 0)) })}
-                    />
-                  </Field>
-                </div>
-              </div>
-
-              <div className="dream-skin-editor-layout">
-                <div className="dream-skin-media-editor">
-                  <div
-                    className="dream-skin-preview"
-                    style={isWindowsPlatform ? undefined : { backgroundColor: themeColors.background }}
-                  >
-                    <img alt={t("Dream Skin 图片预览")} src={previewUrl} />
-                    <span style={isWindowsPlatform ? undefined : { backgroundColor: themeColors.panel, color: themeColors.text }}>
-                      <strong>{theme.name}</strong>
-                      <small style={isWindowsPlatform ? undefined : { color: themeColors.muted }}>{customImagePath ? t("自定义托管图片") : t("目标项目默认图片")}</small>
-                    </span>
-                  </div>
-                  <Field label={t("托管图片路径")}>
-                    <Input
-                      readOnly
-                      placeholder={t("使用目标项目默认图片")}
-                      value={draft?.imagePath ?? ""}
-                    />
-                  </Field>
-                  <Toolbar>
-                    <Button variant="secondary" onClick={() => void actions.chooseDreamSkinImagePath()}>
-                      <Camera className="h-4 w-4" />
-                      {t("导入图片")}
-                    </Button>
-                    <Button
-                      disabled={!customImagePath}
-                      variant="outline"
-                      onClick={() => void actions.resetDreamSkinImage()}
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      {t("恢复默认图片")}
-                    </Button>
-                  </Toolbar>
-                </div>
-
-                <div className="dream-skin-theme-fields">
-                  <div className="dream-skin-text-grid">
-                    <Field label={t("主题 ID")}><Input readOnly={draft?.builtin || savedThemeSelected} value={theme.id} onChange={(event) => updateThemeText("id", event.currentTarget.value)} /></Field>
-                    <Field label={t("主题名称")}><Input value={theme.name} onChange={(event) => updateThemeText("name", event.currentTarget.value)} /></Field>
-                    <Field label={t("品牌副标题")}><Input value={theme.brandSubtitle} onChange={(event) => updateThemeText("brandSubtitle", event.currentTarget.value)} /></Field>
-                    <Field label={t("主题标语")}><Input value={theme.tagline} onChange={(event) => updateThemeText("tagline", event.currentTarget.value)} /></Field>
-                    <Field label={t("项目前缀")}><Input value={theme.projectPrefix} onChange={(event) => updateThemeText("projectPrefix", event.currentTarget.value)} /></Field>
-                    <Field label={t("项目按钮文字")}><Input value={theme.projectLabel} onChange={(event) => updateThemeText("projectLabel", event.currentTarget.value)} /></Field>
-                    <Field label={t("状态文字")}><Input value={theme.statusText} onChange={(event) => updateThemeText("statusText", event.currentTarget.value)} /></Field>
-                    <Field label={t("引用文字")}><Input value={theme.quote} onChange={(event) => updateThemeText("quote", event.currentTarget.value)} /></Field>
-                  </div>
-                  {isWindowsPlatform ? (
-                    <div className="dream-skin-windows-theme-controls">
-                      <Field label={t("外观模式")}>
-                        <div aria-label={t("外观模式")} className="segmented dream-skin-appearance-options" role="group">
-                          {([
-                            ["auto", t("自动")],
-                            ["light", t("亮色")],
-                            ["dark", t("暗色")],
-                          ] as const).map(([value, label]) => (
-                            <button
-                              aria-pressed={themeAppearance === value}
-                              className={themeAppearance === value ? "active" : ""}
-                              key={value}
-                              onClick={() => updateTheme({ ...theme, appearance: value })}
-                              type="button"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </Field>
-                      <div className="dream-skin-windows-accent">
-                        <DreamSkinColorField
-                          label={t("强调色")}
-                          value={windowsAccent}
-                          onChange={updateWindowsAccent}
-                        />
-                        <Button
-                          disabled={!windowsAccent.trim()}
-                          onClick={() => updateWindowsAccent("")}
-                          size="sm"
-                          variant="outline"
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                          {t("跟随图片配色")}
-                        </Button>
-                      </div>
-                      <small className="dream-skin-windows-theme-note">
-                        {t("亮暗模式直接控制 Codex 外观；强调色留空时自动从主题图片提取。")}
-                      </small>
-                    </div>
-                  ) : (
-                    <div className="dream-skin-colors">
-                      {dreamSkinColorFields().map(([key, label]) => (
-                        <DreamSkinColorField
-                          key={key}
-                          label={label}
-                          value={String(themeColors[key])}
-                          onChange={(value) => updateThemeColor(key, value)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <Toolbar>
-                <Button disabled={!draft} onClick={() => void actions.saveDreamSkinTheme()}>
-                  <Save className="h-4 w-4" />
-                  {draft?.builtin || selectedItem?.kind === "activeUnsaved" ? t("保存为新主题") : t("保存主题")}
-                </Button>
-                <Button variant="outline" onClick={() => void actions.resetDreamSkinTheme()}>
-                  <RotateCcw className="h-4 w-4" />
-                  {isWindowsPlatform ? t("恢复 Codex 默认配色") : t("恢复 Dream Skin 默认主题")}
-                </Button>
-              </Toolbar>
-            </div>
-          </details>
-            </>
-          )}
-        </CardContent>
-      </Panel>
-
-      <Panel className="dream-skin-panel">
-        <CardHead title={t("诊断与验证")} detail={t("检查官方应用身份、CDP renderer、目标样式和页面布局")} />
-        <CardContent>
-          <div className="dream-skin-diagnostics-grid">
-            <DreamSkinCheckList title={t("运行诊断")} checks={runtimeChecks} emptyText={t("刷新状态后显示运行诊断。")}/>
-            <DreamSkinCheckList title={t("最近实机验证")} checks={verificationChecks} emptyText={t("运行实机验证后显示页面检查结果。")}/>
-          </div>
-          {verification ? (
-            <div className="dream-skin-verification-meta">
-              <span><small>{t("注入版本")}</small><code>{verification.version || t("未检测到")}</code></span>
-              <span><small>{t("截图路径")}</small><code>{verification.screenshotPath || t("未保存截图")}</code></span>
-            </div>
-          ) : null}
-          <Toolbar>
-            <Button variant="secondary" onClick={() => void actions.refreshDreamSkinStatus()}>
-              <RefreshCw className="h-4 w-4" />
-              {t("刷新诊断")}
-            </Button>
-            <Button onClick={() => void actions.verifyDreamSkin()}>
-              <ShieldCheck className="h-4 w-4" />
-              {t("实机验证")}
-            </Button>
-            <Button variant="outline" onClick={() => void actions.saveDreamSkinScreenshot()}>
-              <Camera className="h-4 w-4" />
-              {t("保存截图")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-    </>
-  );
-});
-
-function DreamSkinColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field className="dream-skin-color-field" label={label}>
-      <span className="dream-skin-color-control">
-        <input
-          aria-label={label}
-          type="color"
-          value={dreamSkinPickerColor(value)}
-          onChange={(event) => onChange(event.currentTarget.value.toUpperCase())}
-        />
-        <Input value={value} onChange={(event) => onChange(event.currentTarget.value)} />
-      </span>
-    </Field>
-  );
-}
-
-function DreamSkinMarketCard({
-  theme,
-  actions,
-  onInstalled,
-}: {
-  theme: DreamSkinMarketTheme;
-  actions: Actions;
-  onInstalled: () => void;
-}) {
-  const status = theme.updateAvailable
-    ? t("可更新")
-    : theme.installed
-      ? theme.installedVersion
-        ? tf("已安装 {0}", [theme.installedVersion])
-        : t("已安装")
-      : t("未安装");
-  return (
-    <article className="dream-skin-market-card">
-      <div className="dream-skin-market-preview">
-        <img
-          alt={theme.name}
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.onerror = null;
-            event.currentTarget.src = isWindowsPlatform ? dreamSkinWindowsPreviewUrl : dreamSkinMacPreviewUrl;
-          }}
-          src={theme.previewUrl}
-        />
-        <UiBadge variant={theme.updateAvailable ? "default" : theme.installed ? "secondary" : "outline"}>{status}</UiBadge>
-      </div>
-      <div className="dream-skin-market-copy">
-        <div className="dream-skin-market-title">
-          <strong title={theme.name}>{theme.name}</strong>
-          <span>v{theme.version}</span>
-        </div>
-        <small>{tf("作者：{0} · {1}", [theme.author, theme.license])}</small>
-        <p>{theme.description || t("暂无主题说明。")}</p>
-        <div className="dream-skin-market-tags">
-          {theme.tags.map((tag) => <span key={tag}>{tag}</span>)}
-        </div>
-      </div>
-      <div className="dream-skin-market-actions">
-        <Button
-          onClick={async () => {
-            if (await actions.installDreamSkinMarketTheme(theme)) onInstalled();
-          }}
-          size="sm"
-        >
-          <Download className="h-4 w-4" />
-          {theme.updateAvailable ? t("更新") : theme.installed ? t("重新安装") : t("安装")}
-        </Button>
-        <Button onClick={() => void actions.openExternalUrl(theme.sourceUrl)} size="sm" variant="outline">
-          <ExternalLink className="h-4 w-4" />
-          {t("来源")}
-        </Button>
-      </div>
-    </article>
-  );
-}
-
-function DreamSkinCommunitySection({
-  community,
-  actions,
-  onInstalled,
-}: {
-  community: DreamSkinCommunityResult | null;
-  actions: Actions;
-  onInstalled: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"latest" | "popular" | "name">("latest");
-  const items = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    const filtered = (community?.items ?? []).filter((item) => {
-      if (!normalized) return true;
-      return [item.name, item.authorDisplayName, item.themeId, item.license]
-        .some((value) => value.toLowerCase().includes(normalized));
-    });
-    return [...filtered].sort((left, right) => {
-      if (sort === "popular") return right.downloadCount - left.downloadCount;
-      if (sort === "name") return left.name.localeCompare(right.name, "zh-CN");
-      return right.reviewedAt.localeCompare(left.reviewedAt);
-    });
-  }, [community?.items, query, sort]);
-
-  return (
-    <section className="dream-skin-community">
-      <div className="dream-skin-library-head">
-        <div>
-          <strong>{t("DreamSkin 社区主题")}</strong>
-          <small>
-            {community?.total
-              ? tf("来自 DreamSkin.cc 的已审核主题，共 {0} 套；安装前仍会在本机再次校验。", [String(community.total)])
-              : t("从 DreamSkin.cc 加载已审核主题包。")}
-          </small>
-        </div>
-        <Toolbar>
-          <Button onClick={() => void actions.refreshDreamSkinCommunity()} variant="secondary">
-            <RefreshCw className="h-4 w-4" />
-            {t("刷新社区")}
-          </Button>
-          <Button onClick={() => void actions.openExternalUrl("https://dreamskin.cc/gallery")} variant="outline">
-            <ExternalLink className="h-4 w-4" />
-            {t("在线主题库")}
-          </Button>
-          <Button onClick={() => void actions.openExternalUrl("https://dreamskin.cc/studio")} variant="outline">
-            <Palette className="h-4 w-4" />
-            {t("在线 Studio")}
-          </Button>
-        </Toolbar>
-      </div>
-      {community?.warning ? (
-        <div className="dream-skin-market-warning">
-          <Info className="h-4 w-4" />
-          <span>{community.warning}</span>
-        </div>
-      ) : null}
-      <div className="dream-skin-community-controls">
-        <Input
-          aria-label={t("搜索社区主题")}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder={t("搜索主题名称、作者或许可证")}
-          value={query}
-        />
-        <AppSelect
-          onChange={(value) => setSort(value as typeof sort)}
-          options={[
-            { value: "latest", label: t("最新审核") },
-            { value: "popular", label: t("下载最多") },
-            { value: "name", label: t("名称排序") },
-          ]}
-          title={t("社区主题排序")}
-          value={sort}
-        />
-      </div>
-      {items.length ? (
-        <div className="dream-skin-community-grid">
-          {items.map((item) => (
-            <DreamSkinCommunityCard
-              actions={actions}
-              key={item.id}
-              onInstalled={onInstalled}
-              theme={item}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="empty">
-          {!community
-            ? t("正在加载 DreamSkin 社区…")
-            : community.status === "failed"
-              ? community.message
-              : query.trim()
-                ? t("没有匹配的社区主题。")
-                : t("DreamSkin 社区暂时没有可用主题。")}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function DreamSkinCommunityCard({
-  theme,
-  actions,
-  onInstalled,
-}: {
-  theme: DreamSkinCommunityTheme;
-  actions: Actions;
-  onInstalled: () => void;
-}) {
-  const status = theme.updateAvailable
-    ? t("可更新")
-    : theme.installed
-      ? tf("已安装 {0}", [theme.installedVersion])
-      : t("未安装");
-  const packageSize = theme.packageBytes >= 1024 * 1024
-    ? `${(theme.packageBytes / 1024 / 1024).toFixed(1)} MiB`
-    : `${Math.ceil(theme.packageBytes / 1024)} KiB`;
-  return (
-    <article className="dream-skin-community-card">
-      <div className="dream-skin-community-preview">
-        <img
-          alt={theme.name}
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.onerror = null;
-            event.currentTarget.src = isWindowsPlatform ? dreamSkinWindowsPreviewUrl : dreamSkinMacPreviewUrl;
-          }}
-          src={theme.previewUrl}
-        />
-        <UiBadge variant={theme.updateAvailable ? "default" : theme.installed ? "secondary" : "outline"}>{status}</UiBadge>
-      </div>
-      <div className="dream-skin-community-copy">
-        <div className="dream-skin-market-title">
-          <strong title={theme.name}>{theme.name}</strong>
-          <span>v{theme.version}</span>
-        </div>
-        <small>{tf("作者：{0} · {1} · {2} 次下载", [theme.authorDisplayName, theme.license, String(theme.downloadCount)])}</small>
-        <small>{tf("主题包：{0}", [packageSize])}</small>
-      </div>
-      <div className="dream-skin-community-actions">
-        <Button
-          disabled={!theme.applyCompatible}
-          onClick={async () => {
-            if (await actions.installDreamSkinCommunityTheme(theme)) onInstalled();
-          }}
-          size="sm"
-          title={theme.applyCompatible ? t("下载、校验并安装主题包") : t("此主题仅支持在线预览或下载")}
-        >
-          <Download className="h-4 w-4" />
-          {theme.updateAvailable ? t("更新") : theme.installed ? t("重新安装") : t("安装")}
-        </Button>
-        <Button onClick={() => void actions.openExternalUrl(`https://dreamskin.cc/preview?themeVersion=${encodeURIComponent(theme.id)}`)} size="sm" variant="outline">
-          <Eye className="h-4 w-4" />
-          {t("预览")}
-        </Button>
-      </div>
-    </article>
-  );
-}
-
-function DreamSkinCheckList({ title, checks, emptyText }: { title: string; checks: DreamSkinCheck[]; emptyText: string }) {
-  return (
-    <section className="dream-skin-check-section">
-      <strong>{title}</strong>
-      <div className="dream-skin-check-list">
-        {checks.length ? checks.map((check) => (
-          <div className={`dream-skin-check is-${check.level}`} key={`${title}-${check.id}`}>
-            {dreamSkinCheckIcon(check.level)}
-            <span>
-              <strong>{check.label}</strong>
-              <small>{check.message}</small>
-            </span>
-            <b>{dreamSkinCheckLevelLabel(check.level)}</b>
-          </div>
-        )) : <p className="empty">{emptyText}</p>}
-      </div>
-    </section>
-  );
-}
-
-function dreamSkinColorFields(): Array<[keyof DreamSkinColors, string]> {
-  return [
-    ["background", t("背景色")],
-    ["panel", t("面板色")],
-    ["panelAlt", t("次级面板色")],
-    ["accent", t("强调色")],
-    ["accentAlt", t("次级强调色")],
-    ["secondary", t("辅助色")],
-    ["highlight", t("高亮色")],
-    ["text", t("文字色")],
-    ["muted", t("弱化文字色")],
-    ["line", t("边线色")],
-  ];
-}
-
-function dreamSkinPickerColor(value: string): string {
-  const color = value.trim();
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color);
-  if (hex) {
-    const digits = hex[1];
-    return digits.length === 3
-      ? `#${digits.split("").map((part) => `${part}${part}`).join("")}`
-      : `#${digits.slice(0, 6)}`;
-  }
-  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)/i.exec(color);
-  if (!rgb) return "#808080";
-  const channel = (raw: string) => Math.max(0, Math.min(255, Math.round(Number(raw)))).toString(16).padStart(2, "0");
-  return `#${channel(rgb[1])}${channel(rgb[2])}${channel(rgb[3])}`;
-}
-
-function dreamSkinCheckIcon(level: "pass" | "warning" | "fail") {
-  if (level === "pass") return <CheckCircle2 aria-hidden="true" className="h-4 w-4" />;
-  if (level === "fail") return <ShieldAlert aria-hidden="true" className="h-4 w-4" />;
-  return <Info aria-hidden="true" className="h-4 w-4" />;
-}
-
-function dreamSkinCheckLevelLabel(level: "pass" | "warning" | "fail"): string {
-  if (level === "pass") return t("通过");
-  if (level === "fail") return t("失败");
-  return t("警告");
-}
-
-function dreamSkinStateLabel(state: "pass" | "warning" | "fail" | "not_running"): string {
-  if (state === "pass") return t("已应用并通过检查");
-  if (state === "warning") return t("需要处理");
-  if (state === "fail") return t("验证失败");
-  return t("Codex 未运行或不可连接");
-}
-
-const ZedRemoteScreen = memo(function ZedRemoteScreen({
-  projects,
-  form,
-  onFormChange,
-  actions,
-}: {
-  projects: ZedRemoteProjectsResult | null;
-  form: BackendSettings;
-  onFormChange: (value: BackendSettings) => void;
-  actions: Actions;
-}) {
-  const allProjects = projects?.projects ?? [];
-  const currentProjects = allProjects.filter((project) => project.isCurrent);
-  const currentIds = new Set(currentProjects.map((project) => project.id));
-  const recentProjects = allProjects.filter((project) => !currentIds.has(project.id) && (project.source === "recent" || project.lastOpenedAtMs));
-  const recentIds = new Set(recentProjects.map((project) => project.id));
-  const discoveredProjects = allProjects.filter((project) => !currentIds.has(project.id) && !recentIds.has(project.id));
-  const copyUrl = async (project: ZedRemoteProject) => {
-    try {
-      await navigator.clipboard.writeText(project.url);
-      await actions.showMessage("Zed Remote URL", t("ssh:// URL 已复制。"), "ok");
-    } catch (error) {
-      await actions.showMessage(t("复制失败"), stringifyError(error), "failed");
-    }
-  };
-  return (
-    <>
-      <Panel>
-        <CardHead title={t("Zed 远程项目")} detail={tf("{0} 个 Codex++ 可识别项目，默认策略：{1}", [allProjects.length, zedStrategyLabel(form.zedRemoteOpenStrategy)])} />
-        <CardContent>
-          <div className="metric-list">
-            <Metric label="Current" value={String(currentProjects.length)} />
-            <Metric label="Recent" value={String(recentProjects.length)} />
-            <Metric label="Discovered" value={String(discoveredProjects.length)} />
-          </div>
-          <div className="zed-remote-settings">
-            <Field label={t("默认打开策略")}>
-              <AppSelect
-                onChange={(value) => onFormChange({ ...form, zedRemoteOpenStrategy: value })}
-                options={[
-                  { value: "addToFocusedWorkspace", label: t("加入当前工作区") },
-                  { value: "reuseWindow", label: t("复用窗口") },
-                  { value: "newWindow", label: t("新窗口") },
-                  { value: "default", label: t("Zed 默认行为") },
-                ]}
-                value={form.zedRemoteOpenStrategy}
-              />
-            </Field>
-            <label className="switch-row compact">
-              <input
-                checked={form.zedRemoteProjectRegistryEnabled}
-                onChange={(event) => onFormChange({ ...form, zedRemoteProjectRegistryEnabled: event.currentTarget.checked })}
-                type="checkbox"
-              />
-              <span>
-                <strong>{t("记录最近打开")}</strong>
-                <small>{t("保存到 Codex++ state，不改写 Zed settings。")}</small>
-              </span>
-              <ToggleVisual />
-            </label>
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.refreshZedRemoteProjects()}>
-              <RefreshCw className="h-4 w-4" />
-              {t("刷新项目")}
-            </Button>
-            <Button variant="secondary" onClick={() => void actions.saveSettingsValue(form, false)}>
-              <Save className="h-4 w-4" />
-              {t("保存策略")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <ZedRemoteProjectSection title="Current" projects={currentProjects} actions={actions} onCopyUrl={copyUrl} />
-      <ZedRemoteProjectSection title="Recent" projects={recentProjects} actions={actions} onCopyUrl={copyUrl} />
-      <ZedRemoteProjectSection title="Discovered from Codex" projects={discoveredProjects} actions={actions} onCopyUrl={copyUrl} />
-    </>
-  );
-});
-
-function ZedRemoteProjectSection({
-  title,
-  projects,
-  actions,
-  onCopyUrl,
-}: {
-  title: string;
-  projects: ZedRemoteProject[];
-  actions: Actions;
-  onCopyUrl: (project: ZedRemoteProject) => Promise<void>;
-}) {
-  return (
-    <Panel>
-      <CardHead title={title} detail={tf("{0} 个项目", [projects.length])} />
-      <CardContent>
-        {projects.length ? (
-          <div className="zed-remote-project-list">
-            {projects.map((project) => (
-              <div className="zed-remote-project-row" key={project.id}>
-                <div className="zed-remote-project-main">
-                  <div>
-                    <strong>{project.label}</strong>
-                    <span>{zedRemoteHostLabel(project)}</span>
-                  </div>
-                  <code>{project.path}</code>
-                  <small>
-                    {zedRemoteSourceLabel(project.source)}
-                    {project.lastOpenedAtMs ? ` · ${formatTime(project.lastOpenedAtMs)}` : ""}
-                  </small>
-                </div>
-                <div className="zed-remote-project-actions">
-                  <Button onClick={() => void actions.openZedRemoteProject(project, "addToFocusedWorkspace")} size="sm">
-                    <ExternalLink className="h-4 w-4" />
-                    {t("加入当前工作区")}
-                  </Button>
-                  <Button onClick={() => void actions.openZedRemoteProject(project, "reuseWindow")} size="sm" variant="outline">
-                    {t("复用窗口")}
-                  </Button>
-                  <Button onClick={() => void actions.openZedRemoteProject(project, "newWindow")} size="sm" variant="outline">
-                    {t("新窗口")}
-                  </Button>
-                  <Button onClick={() => void onCopyUrl(project)} size="icon" title={t("复制 ssh:// URL")} variant="ghost">
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  {project.source === "recent" ? (
-                    <Button onClick={() => void actions.forgetZedRemoteProject(project)} size="icon" title={t("移除最近记录")} variant="ghost">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty">{t("暂无项目。")}</div>
-        )}
-      </CardContent>
-    </Panel>
-  );
-}
-
-const UserScriptsScreen = memo(function UserScriptsScreen({ settings, market, actions }: { settings: SettingsResult | null; market: ScriptMarketResult | null; actions: Actions }) {
-  const inventory = settings?.user_scripts;
-  const scripts = inventory?.scripts ?? [];
-  const marketScripts = market?.market.scripts ?? [];
-  const [marketSearch, setMarketSearch] = useState("");
-  const [marketView, setMarketView] = useState<"grid" | "list">("grid");
-  const filteredMarketScripts = useMemo(() => {
-    const query = marketSearch.trim().toLocaleLowerCase();
-    if (!query) return marketScripts;
-    return marketScripts.filter((script) => {
-      const haystack = [
-        script.name,
-        script.author,
-        script.description,
-        script.version,
-        script.homepage,
-        ...script.tags,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase();
-      return haystack.includes(query);
-    });
-  }, [marketSearch, marketScripts]);
-  const installedCount = marketScripts.filter((script) => script.installed).length;
-  return (
-    <>
-      <Panel>
-        <CardHead title={t("脚本市场")} detail={tf("{0} 个市场脚本，已安装 {1} 个，本地整体 {2}", [marketScripts.length, installedCount, inventory?.enabled === false ? t("关闭") : t("开启")])} />
-        <CardContent>
-          <div className="metric-list">
-            <Metric label={t("市场状态")} value={market?.market.message ?? t("尚未刷新")} />
-            <Metric label={t("远程脚本")} value={tf("{0} 个", [marketScripts.length])} />
-            <Metric label={t("已安装")} value={tf("{0} 个", [installedCount])} />
-            <Metric label={t("本地整体")} value={inventory?.enabled === false ? t("关闭") : t("开启")} />
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.refreshScriptMarket()}>
-              <RefreshCw className="h-4 w-4" />
-              {t("刷新市场")}
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl(SCRIPT_MARKET_REPOSITORY_URL)} variant="secondary">
-              <ExternalLink className="h-4 w-4" />
-              {t("投稿")}
-            </Button>
-            <Button onClick={() => void actions.refreshCurrent()} variant="secondary">
-              <RefreshCw className="h-4 w-4" />
-              {t("刷新本地")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead
-          title={t("市场脚本")}
-          detail={
-            market?.market.updatedAt
-              ? tf("清单更新时间：{0}，当前显示 {1} / {2}", [market.market.updatedAt, filteredMarketScripts.length, marketScripts.length])
-              : t("从 GitHub 静态清单加载")
-          }
-        />
-        <CardContent>
-          <div className="script-market-toolbar">
-            <div className="script-market-search">
-              <Search className="h-4 w-4" />
-              <Input
-                aria-label={t("搜索市场脚本")}
-                onChange={(event) => setMarketSearch(event.currentTarget.value)}
-                placeholder={t("搜索名称、作者、描述或标签")}
-                value={marketSearch}
-              />
-            </div>
-            <div className="script-market-view-toggle" role="group" aria-label={t("脚本市场排版")}>
-              <Button
-                aria-pressed={marketView === "grid"}
-                onClick={() => setMarketView("grid")}
-                size="sm"
-                variant={marketView === "grid" ? "secondary" : "ghost"}
-              >
-                <LayoutGrid className="h-4 w-4" />
-                {t("板块")}
-              </Button>
-              <Button
-                aria-pressed={marketView === "list"}
-                onClick={() => setMarketView("list")}
-                size="sm"
-                variant={marketView === "list" ? "secondary" : "ghost"}
-              >
-                <List className="h-4 w-4" />
-                {t("列表")}
-              </Button>
-            </div>
-          </div>
-          {marketScripts.length ? (
-            filteredMarketScripts.length ? (
-              <div className={marketView === "list" ? "script-market-list" : "script-market-grid"}>
-                {filteredMarketScripts.map((script) => (
-                  <MarketScriptCard key={script.id} script={script} actions={actions} view={marketView} />
-                ))}
-              </div>
-            ) : (
-              <div className="empty">{t("没有匹配的市场脚本。")}</div>
-            )
-          ) : (
-            <div className="empty">{market?.status === "failed" ? market.message : t("点击刷新市场加载远程脚本。")}</div>
-          )}
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("本地脚本")} detail={t("内置、手动和市场安装脚本；可在这里启停或删除用户脚本")} />
-        <CardContent>
-          <div className="table">
-            {scripts.length ? scripts.map((script) => <ScriptRow key={script.key} script={script} actions={actions} />) : <div className="empty">{t("未发现用户脚本。")}</div>}
-          </div>
-        </CardContent>
-      </Panel>
-    </>
-  );
-});
-
-const MaintenanceScreen = memo(function MaintenanceScreen({
-  overview,
-  watcher,
-  settings,
-  launchForm,
-  onLaunchFormChange,
-  removeOwnedData,
-  onRemoveOwnedDataChange,
-  actions,
-}: {
-  overview: OverviewResult | null;
-  watcher: WatcherResult | null;
-  settings: SettingsResult | null;
-  launchForm: { appPath: string; debugPort: string; helperPort: string };
-  onLaunchFormChange: (next: { appPath: string; debugPort: string; helperPort: string }) => void;
-  removeOwnedData: boolean;
-  onRemoveOwnedDataChange: (value: boolean) => void;
-  actions: Actions;
-}) {
-  const savedCodexAppPath = settings?.settings.codexAppPath ?? "";
-  return (
-    <>
-      <Panel>
-        <CardHead title={t("检查与修复")} detail={t("检查入口、Codex 应用和 Watcher 状态")} />
-        <CardContent>
-          <div className="status-table">
-            <StatusRow title={t("Codex 应用")} status={overview?.codex_app.status} path={overview?.codex_app.path} />
-            <StatusRow title={t("静默启动入口")} status={overview?.silent_shortcut.status} path={overview?.silent_shortcut.path} />
-            <StatusRow title={t("管理控制台入口")} status={overview?.management_shortcut.status} path={overview?.management_shortcut.path} />
-            <StatusRow title={t("Watcher 自动接管")} status={watcher?.enabled ? "ok" : "disabled"} path={watcher?.disabled_flag} />
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.checkHealth()}>{t("检查")}</Button>
-            <Button variant="secondary" onClick={() => void actions.repairShortcuts()}>{t("修复快捷方式")}</Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("入口管理")} detail={t("快捷方式写入系统实际桌面位置，不使用写死桌面路径")} />
-        <CardContent>
-          <label className="check-row">
-            <input checked={removeOwnedData} onChange={(event) => onRemoveOwnedDataChange(event.currentTarget.checked)} type="checkbox" />
-            <span>{t("卸载时移除 Codex++ 托管数据")}</span>
-          </label>
-          <Toolbar>
-            <Button onClick={() => void actions.installEntrypoints()}>{t("安装入口")}</Button>
-            <Button variant="secondary" onClick={() => void actions.uninstallEntrypoints()}>{t("卸载入口")}</Button>
-            <Button variant="secondary" onClick={() => void actions.repairShortcuts()}>{t("修复入口")}</Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("自动接管")} detail={t("Watcher 用于保持 Codex++ 接管状态")} />
-        <CardContent>
-          <Toolbar>
-            <Button variant="secondary" onClick={() => void actions.installWatcher()}>{t("安装 watcher")}</Button>
-            <Button variant="secondary" onClick={() => void actions.uninstallWatcher()}>{t("移除 watcher")}</Button>
-            <Button variant="secondary" onClick={() => void actions.enableWatcher()}>{t("启用")}</Button>
-            <Button variant="secondary" onClick={() => void actions.disableWatcher()}>{t("禁用")}</Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("Codex 应用路径")} detail={t("免安装版或解包版只需要选择一次，之后静默启动会自动复用")} />
-        <CardContent>
-          <div className="status-table">
-            <StatusRow title={t("保存路径")} status={savedCodexAppPath ? "ok" : "not_checked"} path={savedCodexAppPath || null} />
-            <StatusRow title={t("当前识别")} status={overview?.codex_app.status} path={overview?.codex_app.path} />
-          </div>
-          <Field label={t("保存的应用路径")}>
-            <Input
-              value={settings?.settings.codexAppPath ?? ""}
-              placeholder={t("选择 Codex.exe、Codex.app、app 目录或解包目录")}
-              readOnly
-            />
-          </Field>
-          <Toolbar>
-            <Button onClick={() => void actions.chooseCodexAppPath("folder")}>{t("选择应用目录")}</Button>
-            <Button variant="secondary" onClick={() => void actions.chooseCodexAppPath("file")}>{t("选择 Codex.exe")}</Button>
-            <Button variant="secondary" onClick={() => void actions.clearCodexAppPath()}>{t("清除保存路径")}</Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("手动启动")} detail={t("应用路径留空时使用已保存路径；没有保存路径时使用自动探测")} />
-        <CardContent>
-          <Field label={t("应用路径覆盖")}>
-            <Input
-              value={launchForm.appPath}
-              onChange={(event) => onLaunchFormChange({ ...launchForm, appPath: event.currentTarget.value })}
-              placeholder={savedCodexAppPath || t("例如 C:\\Program Files\\WindowsApps\\OpenAI.Codex...\\app")}
-            />
-          </Field>
-          <div className="form-row">
-            <Field label={t("Debug 端口")}>
-              <Input
-                value={launchForm.debugPort}
-                onChange={(event) => onLaunchFormChange({ ...launchForm, debugPort: event.currentTarget.value })}
-              />
-            </Field>
-            <Field label={t("Helper 端口")}>
-              <Input
-                value={launchForm.helperPort}
-                onChange={(event) => onLaunchFormChange({ ...launchForm, helperPort: event.currentTarget.value })}
-              />
-            </Field>
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.launch()}>{t("启动 Codex++")}</Button>
-            <Button variant="secondary" onClick={() => void actions.saveManualCodexAppPath()}>
-              {t("保存为默认路径")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-    </>
-  );
-});
-
-const AboutScreen = memo(function AboutScreen({
-  overview,
-  update,
-  updateInstallProgress,
-  diagnosticsScreen,
-  actions,
-}: {
-  overview: OverviewResult | null;
-  update: UpdateResult | null;
-  updateInstallProgress: TaskProgress;
-  diagnosticsScreen: ReactNode;
-  actions: Actions;
-}) {
-  return (
-    <>
-      <Panel>
-        <CardHead title={t("关于 Codex++")} detail={t("本地 Codex 增强、管理工具和安装包维护")} />
-        <CardContent>
-          <div className="metric-list">
-            <Metric label={t("Codex++ 版本")} value={overview?.current_version ?? update?.currentVersion ?? "-"} />
-            <Metric label={t("Codex 版本")} value={overview?.codex_version ?? t("未检测到")} />
-            <Metric label={t("项目地址")} value="github.com/TttXxx36/Codex--" />
-          </div>
-          <Toolbar>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--")} variant="secondary">
-              <ExternalLink className="h-4 w-4" />
-              {t("打开项目主页")}
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--/issues")} variant="secondary">
-              <ExternalLink className="h-4 w-4" />
-              {t("反馈问题")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("GitHub Release 更新")} detail={tf("当前版本 {0}", [overview?.current_version ?? update?.currentVersion ?? "-"])} />
-        <CardContent>
-          <div className="metric-list">
-            <Metric label={t("状态")} value={update?.status ?? "not_checked"} />
-            <Metric label={t("最新版本")} value={update?.latestVersion ?? t("未检查")} />
-            <Metric label={t("资源")} value={update?.assetName ?? "-"} />
-            <Metric label={t("进度")} value={`${formatProgressPercent(update?.progress ?? 0)}%`} />
-          </div>
-          <Textarea className="log-view" readOnly value={update?.releaseSummary || update?.message || t("尚未检查 GitHub Release；更新会下载并启动安装包。")} />
-          <TaskProgressBox completedTitle={t("上次更新结果")} progress={updateInstallProgress} title={t("安装包更新进度")} />
-          <Toolbar>
-            <Button onClick={() => void actions.checkUpdate()}>{t("检查更新")}</Button>
-            <Button disabled={updateInstallProgress.active} variant="secondary" onClick={() => void actions.performUpdate()}>
-              {updateInstallProgress.active ? t("正在下载安装包…") : t("下载并运行安装包")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      {diagnosticsScreen}
-    </>
-  );
-});
-
-const SettingsScreen = memo(function SettingsScreen({
-  dirty,
-  settings,
-  theme,
-  form,
-  onFormChange,
-  actions,
-}: {
-  dirty: boolean;
-  settings: SettingsResult | null;
-  theme: Theme;
-  form: BackendSettings;
-  onFormChange: (value: BackendSettings) => void;
-  actions: Actions;
-}) {
-  return (
-    <div className="settings-page">
-      <Panel>
-        <CardHead title={t("基础设置")} detail={settings?.settings_path ?? ""} />
-        <CardContent className="settings-content">
-          <div className="theme-row">
-            <div>
-              <strong>{t("界面主题")}</strong>
-              <span>{t("当前为")}{theme === "dark" ? t("深色") : t("浅色")}{t("模式。")}</span>
-            </div>
-            <Button variant="secondary" onClick={actions.toggleTheme}>{t("切换主题")}</Button>
-          </div>
-          <Field className="settings-test-model-field" label={t("供应商测试模型")}>
-            <Input
-              value={form.relayTestModel}
-              onChange={(event) => onFormChange({ ...form, relayTestModel: event.currentTarget.value })}
-              placeholder={t("例如 gpt-5.4-mini")}
-            />
-          </Field>
-          <div className="settings-block stepwise-settings-block" id={SETTINGS_STEPWISE_SECTION_ID}>
-            <div className="section-title">Stepwise</div>
-            <div className="stepwise-settings-section">{t("连接")}</div>
-            <div className="form-row">
-              <Field label="Base URL">
-                <Input
-                  value={form.codexAppStepwiseBaseUrl}
-                  onChange={(event) => onFormChange({ ...form, codexAppStepwiseBaseUrl: event.currentTarget.value })}
-                  placeholder="https://api.example.com/v1"
-                />
-              </Field>
-              <Field label="Model">
-                <Input
-                  value={form.codexAppStepwiseModel}
-                  onChange={(event) => onFormChange({ ...form, codexAppStepwiseModel: event.currentTarget.value })}
-                  placeholder={t("例如 gpt-5.4-mini")}
-                />
-              </Field>
-            </div>
-            <div className="form-row">
-              <Field label={t("协议")}>
-                <AppSelect
-                  value={form.codexAppStepwiseProtocol}
-                  onChange={(value) => onFormChange({ ...form, codexAppStepwiseProtocol: value })}
-                  options={[
-                    { value: "auto", label: t("自动兼容") },
-                    { value: "chat_completions", label: "Chat Completions" },
-                    { value: "responses", label: "Responses API" },
-                    { value: "anthropic_messages", label: "Anthropic Messages" },
-                  ]}
-                />
-              </Field>
-              <Field label={t("模式")}>
-                <AppSelect
-                  value={form.codexAppStepwiseGenerationMode}
-                  onChange={(value) => onFormChange({ ...form, codexAppStepwiseGenerationMode: value })}
-                  options={[
-                    { value: "auto", label: t("自动生成") },
-                    { value: "manual", label: t("手动刷新") },
-                  ]}
-                />
-              </Field>
-            </div>
-            <Field label="API Key">
-              <Input
-                type="password"
-                value={form.codexAppStepwiseApiKey}
-                onChange={(event) => onFormChange({ ...form, codexAppStepwiseApiKey: event.currentTarget.value })}
-              />
-            </Field>
-            <details className="stepwise-advanced">
-              <summary>{t("高级参数")}</summary>
-              <div className="form-row">
-                <Field label={t("API Key 环境变量")}>
-                  <Input
-                    value={form.codexAppStepwiseApiKeyEnv}
-                    onChange={(event) => onFormChange({ ...form, codexAppStepwiseApiKeyEnv: event.currentTarget.value })}
-                  />
-                </Field>
-                <Field label={t("最多建议数")}>
-                  <Input
-                    max={6}
-                    min={0}
-                    type="number"
-                    value={form.codexAppStepwiseMaxItems}
-                    onChange={(event) =>
-                      onFormChange({ ...form, codexAppStepwiseMaxItems: clampNumber(Number(event.currentTarget.value), 0, 6) })
-                    }
-                  />
-                </Field>
-              </div>
-              <div className="form-row">
-                <Field label={t("超时毫秒")}>
-                  <Input
-                    min={1000}
-                    type="number"
-                    value={form.codexAppStepwiseTimeoutMs}
-                    onChange={(event) =>
-                      onFormChange({ ...form, codexAppStepwiseTimeoutMs: clampNumber(Number(event.currentTarget.value), 1000, 60000) })
-                    }
-                  />
-                </Field>
-                <Field label={t("最大输入字符")}>
-                  <Input
-                    min={1000}
-                    type="number"
-                    value={form.codexAppStepwiseMaxInputChars}
-                    onChange={(event) =>
-                      onFormChange({ ...form, codexAppStepwiseMaxInputChars: clampNumber(Number(event.currentTarget.value), 1000, 24000) })
-                    }
-                  />
-                </Field>
-              </div>
-              <Field label={t("最大输出 tokens")}>
-                <Input
-                  min={100}
-                  type="number"
-                  value={form.codexAppStepwiseMaxOutputTokens}
-                  onChange={(event) =>
-                    onFormChange({ ...form, codexAppStepwiseMaxOutputTokens: clampNumber(Number(event.currentTarget.value), 100, 4000) })
-                  }
-                />
-              </Field>
-            </details>
-            <div className="toolbar stepwise-settings-actions">
-              <Button variant="secondary" onClick={() => void actions.testStepwiseSettings(form)}>{t("测试连接")}</Button>
-            </div>
-          </div>
-          <div className="settings-block">
-            <label className="check-row">
-              <input
-                checked={form.codexAppImageOverlayEnabled}
-                onChange={(event) =>
-                  onFormChange({ ...form, codexAppImageOverlayEnabled: event.currentTarget.checked })
-                }
-                type="checkbox"
-              />
-              <span>{t("启用 Codex 图片覆盖层")}</span>
-            </label>
-            <div className="form-row">
-              <Field label={t("覆盖图片")}>
-                <Input
-                  value={form.codexAppImageOverlayPath}
-                  onChange={(event) => onFormChange({ ...form, codexAppImageOverlayPath: event.currentTarget.value })}
-                  placeholder={t("选择 png / jpg / webp / gif / bmp")}
-                />
-              </Field>
-              <Toolbar>
-                <Button variant="secondary" onClick={() => void actions.chooseImageOverlayPath()}>
-                  {t("选择图片")}
-                </Button>
-              </Toolbar>
-            </div>
-            <Field label={tf("透明度 {0}%", [form.codexAppImageOverlayOpacity])}>
-              <Input
-                min={1}
-                max={100}
-                type="range"
-                value={form.codexAppImageOverlayOpacity}
-                onChange={(event) =>
-                  onFormChange({
-                    ...form,
-                    codexAppImageOverlayOpacity: clampNumber(Number(event.currentTarget.value), 1, 100),
-                  })
-                }
-              />
-            </Field>
-            <Field label={t("背景适配方式")}>
-              <AppSelect
-                value={form.codexAppImageOverlayFitMode}
-                onChange={(value) =>
-                  onFormChange({
-                    ...form,
-                    codexAppImageOverlayFitMode: value,
-                  })
-                }
-                options={[
-                  { value: "fill", label: t("填充") },
-                  { value: "fit", label: t("适应") },
-                  { value: "stretch", label: t("拉伸") },
-                  { value: "tile", label: t("平铺") },
-                  { value: "center", label: t("居中") },
-                ]}
-              />
-            </Field>
-          </div>
-          <Toolbar>
-            <Button variant="secondary" onClick={() => void actions.resetImageOverlaySettings()}>
-              {t("重置背景")}
-            </Button>
-          </Toolbar>
-        </CardContent>
-      </Panel>
-      <Panel>
-        <CardHead title={t("Codex 启动参数")} detail={t("启动 Codex App 时追加到默认 CDP 参数后。留空则保持默认启动行为。")} />
-        <CardContent className="settings-content">
-          <Field label={t("额外参数")}>
-            <Textarea
-              className="launch-args-input"
-              placeholder="--force_high_performance_gpu"
-              spellCheck={false}
-              value={codexExtraArgsToInput(form.codexExtraArgs)}
-              onChange={(event) =>
-                onFormChange({
-                  ...form,
-                  codexExtraArgs: inputToCodexExtraArgs(event.currentTarget.value),
-                })
-              }
-            />
-          </Field>
-          <p className="field-hint">{t("每行一个参数，例如 --force_high_performance_gpu。不需要填写 open 或 --args。")}</p>
-        </CardContent>
-      </Panel>
-      {dirty ? (
-        <div className="settings-save-bar">
-          <span>{t("设置有修改时，保存后才会写入本地配置。")}</span>
-          <Button onClick={() => void actions.saveSettings()}>
-            <Save className="h-4 w-4" />
-            {t("保存设置")}
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-
-function MarketScriptCard({ script, actions, view = "grid" }: { script: ScriptMarketItem; actions: Actions; view?: "grid" | "list" }) {
-  const status = script.updateAvailable ? t("可更新") : script.installed ? tf("已安装 {0}", [script.installedVersion]) : t("未安装");
-  const isGitHubHomepage = script.homepage ? isGitHubRepositoryHomepage(script.homepage) : false;
-  const githubSupportLabel = isGitHubHomepage ? tf("在 GitHub 上支持作者：{0}", [script.name]) : undefined;
-  return (
-    <div className="script-market-card" data-view={view}>
-      <div className="script-market-title">
-        <div>
-          <strong>{script.name}</strong>
-          <span>{script.author || t("未知作者")}</span>
-        </div>
-        <UiBadge variant={script.updateAvailable ? "default" : script.installed ? "secondary" : "outline"}>{status}</UiBadge>
-      </div>
-      <p className="script-market-description">{script.description || t("暂无描述。")}</p>
-      <div className="script-market-tags">
-        <span className="script-market-tag">v{script.version}</span>
-        {script.tags.map((tag) => (
-          <span className="script-market-tag" key={tag}>{tag}</span>
-        ))}
-      </div>
-      <div className="script-market-actions">
-        <Button onClick={() => void actions.installMarketScript(script.id)} size="sm">
-          <Download className="h-4 w-4" />
-          {script.updateAvailable ? t("更新") : script.installed ? t("重新安装") : t("安装")}
-        </Button>
-        {script.homepage ? (
-          <Button
-            aria-label={githubSupportLabel}
-            onClick={() => void actions.openExternalUrl(script.homepage)}
-            size="sm"
-            title={githubSupportLabel}
-            variant="secondary"
-          >
-            {isGitHubHomepage ? (
-              <>
-                <Star className="h-4 w-4" />
-                Star
-                <ExternalLink className="h-3 w-3" />
-              </>
-            ) : (
-              <>
-                <ExternalLink className="h-4 w-4" />
-                {t("主页")}
-              </>
-            )}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-
-
-function RelayContextManager({
-  form,
-  liveEntries,
-  relayFiles,
-  onFormChange,
-  actions,
-}: {
-  form: BackendSettings;
-  liveEntries: CodexContextEntries | null;
-  relayFiles: RelayFilesResult | null;
-  onFormChange: (value: BackendSettings) => void;
-  actions: Actions;
-}) {
-  const entries = contextEntriesWithLiveEntries(form, liveEntries);
-  const [activeKind, setActiveKind] = useState<ContextKind>("mcp");
-  const [editor, setEditor] = useState<{ kind: ContextKind; entry?: CodexContextEntry } | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const visibleEntries = contextEntriesByKind(entries, activeKind);
-  const label = contextKindLabel(activeKind);
-
-  const syncContextEntries = async (next: BackendSettings) => {
-    const syncResult = await actions.syncLiveContextEntries(next, true);
-    if (!syncResult || !isSuccessStatus(syncResult.status)) return false;
-    await actions.refreshRelayFiles();
-    return true;
-  };
-
-  const saveEntry = async (kind: ContextKind, id: string, tomlBody: string) => {
-    const next = await actions.upsertContextEntry(form, kind, id, tomlBody);
-    if (!next) return;
-    onFormChange(next);
-    if (!(await syncContextEntries(next))) return;
-    setEditor(null);
-  };
-
-  const toggleContextEntryEnabled = async (entry: CodexContextEntry) => {
-    const nextBody = setContextEntryEnabled(entry.tomlBody, !entry.enabled);
-    const next = await actions.upsertContextEntry(form, entry.kind, entry.id, nextBody);
-    if (!next) return;
-    onFormChange(next);
-    await syncContextEntries(next);
-  };
-
-  const deleteEntry = async (entry: CodexContextEntry) => {
-    const next = await actions.deleteContextEntry(form, entry.kind, entry.id);
-    if (!next) return;
-    onFormChange(next);
-    await syncContextEntries(next);
-  };
-
-  const importJson = async (json: string) => {
-    const next = await actions.importMcpServersJson(form, json);
-    if (!next) return;
-    onFormChange(next);
-    if (!(await syncContextEntries(next))) return;
-    setImportOpen(false);
-  };
-
-  return (
-    <div className="relay-context-panel">
-      <div className="relay-context-head">
-        <div>
-          <strong>{t("Codex MCP&插件")}</strong>
-          <span>{t("MCP 与插件作为全局配置独立管理，切换任意供应商都会合并。")}</span>
-        </div>
-        <div className="relay-context-head-actions">
-          {activeKind === "mcp" ? (
-            <Button
-              onClick={() => {
-                setEditor(null);
-                setImportOpen(true);
-              }}
-              size="sm"
-              variant="secondary"
-            >
-              <Download className="h-4 w-4" />
-              {t("导入 JSON")}
-            </Button>
-          ) : null}
-          <Button onClick={() => setEditor({ kind: activeKind })} size="sm" variant="secondary">
-            <Plus className="h-4 w-4" />
-            {t("新增")}{label}
-          </Button>
-        </div>
-      </div>
-      <div className="segmented">
-        {contextKindOptions.map((option) => (
-          <button
-            className={activeKind === option.kind ? "active" : ""}
-            key={option.kind}
-            onClick={() => setActiveKind(option.kind)}
-            type="button"
-          >
-            <span>{option.label}</span>
-            <small>{contextEntriesByKind(entries, option.kind).length}</small>
-          </button>
-        ))}
-      </div>
-      <div className="relay-context-summary">
-        {t("当前共有")} {visibleEntries.length} {t("个")}{label}{t("；这些条目独立于供应商保存，会写入所有供应商切换后的 config.toml。")}
-      </div>
-      <div className="relay-context-list">
-        {visibleEntries.length ? (
-          visibleEntries.map((entry) => (
-            <div className="relay-context-row" key={`${entry.kind}-${entry.id}`}>
-              <strong className="context-title">{entry.title || entry.id}</strong>
-              <div className="relay-context-actions">
-                <button
-                  aria-checked={entry.enabled}
-                  aria-label={`contextEnabledSwitch-${entry.kind}-${entry.id}`}
-                  className={`context-enabled-switch ${entry.enabled ? "active" : ""}`}
-                  onClick={() => void toggleContextEntryEnabled(entry)}
-                  role="switch"
-                  title={entry.enabled ? t("禁用此扩展项") : t("启用此扩展项")}
-                  type="button"
-                >
-                  <span className="context-switch-track" aria-hidden="true">
-                    <span className="context-switch-thumb" />
-                  </span>
-                </button>
-                <Button onClick={() => setEditor({ kind: entry.kind, entry })} size="icon" title={t("编辑扩展项")} variant="ghost">
-                  <Edit3 className="h-4 w-4" />
-                </Button>
-                <Button
-                  className="relay-context-delete"
-                  onClick={() => void deleteEntry(entry)}
-                  size="icon"
-                  title={t("删除扩展项")}
-                  variant="ghost"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="empty">{t("暂无")}{label}{t("，可以从通用配置文件或这里新增。")}</div>
-        )}
-      </div>
-      {importOpen ? (
-        <McpJsonImporter actions={actions} onCancel={() => setImportOpen(false)} onImport={importJson} />
-      ) : null}
-      {editor ? (
-        <ContextEntryEditor
-          entry={editor.entry}
-          kind={editor.kind}
-          onCancel={() => setEditor(null)}
-          onSave={(kind, id, tomlBody) => void saveEntry(kind, id, tomlBody)}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function McpJsonImporter({
-  actions,
-  onCancel,
-  onImport,
-}: {
-  actions: Actions;
-  onCancel: () => void;
-  onImport: (json: string) => void;
-}) {
-  const [json, setJson] = useState("");
-  const [preview, setPreview] = useState<McpImportPreviewResult | null>(null);
-
-  const runPreview = async () => {
-    const result = await actions.previewMcpServersJson(json);
-    setPreview(result && isSuccessStatus(result.status) ? result : null);
-  };
-
-  return (
-    <div aria-modal="true" className="modal-backdrop" role="dialog">
-      <div className="modal-card context-modal">
-        <div className="modal-head">
-          <div>
-            <h2>{t("导入 MCP JSON")}</h2>
-            <p className="modal-message">{t("支持 mcpServers / servers 包裹，也支持直接粘贴单个服务器配置。")}</p>
-          </div>
-          <button aria-label={t("关闭窗口")} className="toast-close" onClick={onCancel} type="button">×</button>
-        </div>
-        <Field label={t("MCP 配置 JSON")}>
-          <Textarea
-            className="context-editor-textarea"
-            value={json}
-            onChange={(event) => {
-              setJson(event.currentTarget.value);
-              setPreview(null);
-            }}
-            placeholder={'{\n  "mcpServers": {\n    "context7": {\n      "command": "npx",\n      "args": ["-y", "@upstash/context7-mcp"]\n    }\n  }\n}'}
-            spellCheck={false}
-          />
-        </Field>
-        {preview ? (
-          <div className="relay-context-summary">
-            <div>{tf("将导入 {0} 个：{1}", [preview.entries.length, preview.entries.map((item) => item.id).join("、")])}</div>
-            {preview.warnings.map((warning) => <div key={warning}>{warning}</div>)}
-          </div>
-        ) : null}
-        <Toolbar>
-          <Button disabled={!json.trim()} onClick={() => void runPreview()} size="sm" variant="secondary">{t("预览")}</Button>
-          <Button disabled={!preview} onClick={() => onImport(json)} size="sm">
-            <Download className="h-4 w-4" />
-            {t("确认导入")}
-          </Button>
-          <Button onClick={onCancel} size="sm" variant="secondary">{t("取消")}</Button>
-        </Toolbar>
-      </div>
-    </div>
-  );
-}
-
-function ContextEntryEditor({
-  kind,
-  entry,
-  onCancel,
-  onSave,
-}: {
-  kind: ContextKind;
-  entry?: CodexContextEntry;
-  onCancel: () => void;
-  onSave: (kind: ContextKind, id: string, tomlBody: string) => void;
-}) {
-  const [draftKind, setDraftKind] = useState<ContextKind>(entry?.kind ?? kind);
-  const [id, setId] = useState(entry?.id ?? "");
-  const [tomlBody, setTomlBody] = useState(entry?.tomlBody ?? "");
-  const canSave = id.trim().length > 0;
-
-  return (
-    <div className="context-editor">
-      <div className="context-editor-fields">
-        <Field label={t("类型")}>
-          <AppSelect
-            disabled={!!entry}
-            value={draftKind}
-            onChange={(value) => setDraftKind(value)}
-            options={contextKindOptions.map((option) => ({ value: option.kind, label: option.label }))}
-          />
-        </Field>
-        <Field label="ID">
-          <Input
-            disabled={!!entry}
-            value={id}
-            onChange={(event) => setId(event.currentTarget.value.trim())}
-            placeholder={t("例如 context7")}
-          />
-        </Field>
-      </div>
-      <Field label={t("TOML 配置体")}>
-        <Textarea
-          className="context-editor-textarea"
-          value={tomlBody}
-          onChange={(event) => setTomlBody(event.currentTarget.value)}
-          placeholder={t("只填写表头下面的内容，例如：\ncommand = \"npx\"\nargs = [\"-y\", \"@upstash/context7-mcp\"]")}
-          spellCheck={false}
-        />
-      </Field>
-      <Toolbar>
-        <Button disabled={!canSave} onClick={() => onSave(draftKind, id.trim(), tomlBody)} size="sm">
-          <Save className="h-4 w-4" />
-          {t("保存扩展项")}
-        </Button>
-        <Button onClick={onCancel} size="sm" variant="secondary">{t("取消")}</Button>
-      </Toolbar>
-    </div>
-  );
-}
-
-
-function ModeSelector({ launchMode, actions }: { launchMode: LaunchMode; actions: Actions }) {
-  return (
-    <div className="mode-grid">
-      <button
-        className={`mode-option ${launchMode === "relay" ? "active" : ""}`}
-        onClick={() => void actions.setLaunchMode("relay")}
-        type="button"
-      >
-        <strong>{t("兼容增强")}</strong>
-        <span>{t("适合官方登录或官方混入 API Key；保留会话删除、导出和用户脚本，关闭插件市场相关增强。")}</span>
-      </button>
-      <button
-        className={`mode-option ${launchMode === "patch" ? "active" : ""}`}
-        onClick={() => void actions.setLaunchMode("patch")}
-        type="button"
-      >
-        <strong>{t("完整增强")}</strong>
-        <span>{t("适合纯 API；启用插件市场、会话删除导出等全部页面能力。")}</span>
-      </button>
-    </div>
-  );
-}
-
-function FeatureItem({ title, detail, enabled }: { title: string; detail: string; enabled: boolean }) {
-  return (
-    <div className="feature-item">
-      <div>
-        <strong>{title}</strong>
-        <span>{detail}</span>
-      </div>
-      <Badge status={enabled ? "ok" : "disabled"} />
-    </div>
-  );
-}
-
-function FeatureGroup({ title, detail, children }: { title: string; detail: string; children: ReactNode }) {
-  return (
-    <section className="feature-group">
-      <div className="feature-group-head">
-        <strong>{title}</strong>
-        <small>{detail}</small>
-      </div>
-      <div className="feature-switch-grid">{children}</div>
-    </section>
-  );
-}
-
-function FeatureToggle({
-  title,
-  detail,
-  checked,
-  disabled = false,
-  onChange,
-}: {
-  title: string;
-  detail: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className={`feature-toggle ${disabled ? "disabled" : ""}`}>
-      <input
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-        type="checkbox"
-      />
-      <span>
-        <strong>{title}</strong>
-        <small>{detail}</small>
-      </span>
-      <ToggleVisual />
-    </label>
-  );
-}
-
-function GuideList({ items }: { items: string[] }) {
-  return (
-    <div className="guide-list">
-      {items.map((item, index) => (
-        <div className="guide-step" key={item}>
-          <span>{index + 1}</span>
-          <p>{item}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function DreamSkinUnsavedDialog({
   onSave,
@@ -6812,40 +4071,7 @@ function DreamSkinCommunityLinkDialog({
   );
 }
 
-function StatusRow({ title, status = "unknown", path }: { title: string; status?: string; path?: string | null }) {
-  return (
-    <div className="status-row">
-      <span>{title}</span>
-      <Badge status={status} />
-      <code>{path || t("未记录路径")}</code>
-    </div>
-  );
-}
 
-function ScriptRow({ script, actions }: { script: NonNullable<UserScriptInventory["scripts"]>[number]; actions: Actions }) {
-  const source = script.market_id ? tf("市场 · {0}", [script.version || t("未知版本")]) : script.source === "builtin" ? t("内置") : t("用户");
-  const canDelete = script.source === "user";
-  return (
-    <div className="table-row">
-      <span>{script.name}</span>
-      <span>{source}</span>
-      <span>{script.enabled ? t("启用") : t("关闭")}</span>
-      <span>{script.status}</span>
-      <div className="script-row-actions">
-        <Button onClick={() => void actions.setUserScriptEnabled(script.key, !script.enabled)} size="sm" variant="secondary">
-          {script.enabled ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />}
-          {script.enabled ? t("禁用") : t("启用")}
-        </Button>
-        {canDelete ? (
-          <Button onClick={() => void actions.deleteUserScript(script.key)} size="sm" variant="outline">
-            <Trash2 className="h-4 w-4" />
-            {t("删除")}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 function routeTitle(route: Route) {
   return routes.find((item) => item.id === route)?.label ?? t("概览");
@@ -6872,13 +4098,13 @@ function routeSubtitle(route: Route) {
   return subtitles[route];
 }
 
-const contextKindOptions: Array<{ kind: ContextKind; label: string; tableName: string }> = [
+export const contextKindOptions: Array<{ kind: ContextKind; label: string; tableName: string }> = [
   { kind: "mcp", label: "MCP", tableName: "mcp_servers" },
   { kind: "skill", label: "Skills", tableName: "skills" },
   { kind: "plugin", label: t("插件"), tableName: "plugins" },
 ];
 
-function contextKindLabel(kind: ContextKind) {
+export function contextKindLabel(kind: ContextKind) {
   return contextKindOptions.find((option) => option.kind === kind)?.label ?? t("扩展项");
 }
 
@@ -6891,7 +4117,7 @@ function contextEntriesFromSettings(settings: BackendSettings): CodexContextEntr
   };
 }
 
-function contextEntriesWithLiveEntries(settings: BackendSettings, liveEntries: CodexContextEntries | null): CodexContextEntries {
+export function contextEntriesWithLiveEntries(settings: BackendSettings, liveEntries: CodexContextEntries | null): CodexContextEntries {
   const commonEntries = contextEntriesFromSettings(settings);
   if (!liveEntries) return commonEntries;
   const liveByKind: Record<ContextKind, Map<string, CodexContextEntry>> = {
@@ -7057,7 +4283,7 @@ function contextEntryEnabled(tomlBody: string) {
   return !tomlBody.split(/\r?\n/).some((line) => /^\s*enabled\s*=\s*false\s*(#.*)?$/i.test(line));
 }
 
-function setContextEntryEnabled(tomlBody: string, enabled: boolean) {
+export function setContextEntryEnabled(tomlBody: string, enabled: boolean) {
   const lines = tomlBody.trimEnd().split(/\r?\n/);
   const nextValue = `enabled = ${enabled ? "true" : "false"}`;
   let replaced = false;
@@ -7083,7 +4309,7 @@ function unquoteTomlKey(key: string) {
   return key;
 }
 
-function contextEntriesByKind(entries: CodexContextEntries, kind: ContextKind): CodexContextEntry[] {
+export function contextEntriesByKind(entries: CodexContextEntries, kind: ContextKind): CodexContextEntry[] {
   if (kind === "mcp") return dedupeContextEntryList(entries.mcpServers);
   if (kind === "skill") return dedupeContextEntryList(entries.skills);
   return dedupeContextEntryList(entries.plugins);
@@ -7461,7 +4687,7 @@ function providerInitial(name: string) {
   return Array.from(trimmed)[0]?.toUpperCase() || t("供");
 }
 
-function isSuccessStatus(status?: Status) {
+export function isSuccessStatus(status?: Status) {
   return status === "ok" || status === "accepted";
 }
 
@@ -7470,7 +4696,7 @@ function truncateSessionDeletePreview(value: string) {
   return normalized.length > 20 ? `${normalized.slice(0, 20)}...` : normalized;
 }
 
-function normalizeSettings(settings: BackendSettings): BackendSettings {
+export function normalizeSettings(settings: BackendSettings): BackendSettings {
   const backendAggregates = new Map(
     (settings.aggregateRelayProfiles ?? []).map((aggregate) => [aggregate.id, aggregate] as const),
   );
@@ -7561,7 +4787,7 @@ function backendSettingsEqual(left: BackendSettings, right: BackendSettings): bo
   return JSON.stringify(normalizeSettings(left)) === JSON.stringify(normalizeSettings(right));
 }
 
-function clampNumber(value: number, min: number, max: number): number {
+export function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, Math.round(value)));
 }
@@ -7581,11 +4807,11 @@ function normalizeImageOverlayFitMode(value: string | undefined): ImageOverlayFi
     : "fit";
 }
 
-function codexExtraArgsToInput(args: string[] | undefined) {
+export function codexExtraArgsToInput(args: string[] | undefined) {
   return (args ?? []).join("\n");
 }
 
-function inputToCodexExtraArgs(value: string) {
+export function inputToCodexExtraArgs(value: string) {
   return value === "" ? [] : value.split(/\r?\n/);
 }
 
@@ -8684,20 +5910,20 @@ function numberOrDefault(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function zedStrategyLabel(strategy: ZedOpenStrategy) {
+export function zedStrategyLabel(strategy: ZedOpenStrategy) {
   if (strategy === "reuseWindow") return t("复用窗口");
   if (strategy === "newWindow") return t("新窗口");
   if (strategy === "default") return t("Zed 默认行为");
   return t("加入当前工作区");
 }
 
-function zedRemoteHostLabel(project: ZedRemoteProject) {
+export function zedRemoteHostLabel(project: ZedRemoteProject) {
   const user = project.ssh.user ? `${project.ssh.user}@` : "";
   const port = project.ssh.port ? `:${project.ssh.port}` : "";
   return `${user}${project.ssh.host}${port}`;
 }
 
-function zedRemoteSourceLabel(source: string) {
+export function zedRemoteSourceLabel(source: string) {
   if (source === "currentThread") return t("当前会话");
   if (source === "codexRemoteProject") return "Codex remote project";
   if (source === "threadWorkspaceHint") return "Thread workspace hint";

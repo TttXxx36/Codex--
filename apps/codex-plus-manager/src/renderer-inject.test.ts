@@ -777,6 +777,7 @@ describe("relay pureApi provider resolution", () => {
 describe("Stepwise generation mode contracts", () => {
   it("exposes automatic and manual generation in manager settings", async () => {
     const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+    const settings = await readFile(new URL("./views/SettingsScreen.tsx", import.meta.url), "utf8");
     const renderer = await readFile(
       new URL("../../../assets/inject/renderer-inject.js", import.meta.url),
       "utf8",
@@ -788,11 +789,11 @@ describe("Stepwise generation mode contracts", () => {
     assert.match(app, /codexAppStepwiseGenerationMode: "auto",/);
     assert.match(app, /codexAppAnswerOutlineEnabled: false,/);
     assert.match(renderer, /answerOutline: false,/);
-    assert.match(app, /<Field label=\{t\("模式"\)\}>/);
-    assert.match(app, /\{ value: "auto", label: t\("自动生成"\) \}/);
-    assert.match(app, /\{ value: "manual", label: t\("手动刷新"\) \}/);
-    assert.match(app, /\{ value: "auto", label: t\("自动兼容"\) \}/);
-    assert.match(app, /\{ value: "anthropic_messages", label: "Anthropic Messages" \}/);
+    assert.match(settings, /<Field label=\{t\("模式"\)\}>/);
+    assert.match(settings, /\{ value: "auto", label: t\("自动生成"\) \}/);
+    assert.match(settings, /\{ value: "manual", label: t\("手动刷新"\) \}/);
+    assert.match(settings, /\{ value: "auto", label: t\("自动兼容"\) \}/);
+    assert.match(settings, /\{ value: "anthropic_messages", label: "Anthropic Messages" \}/);
     assert.match(app, /function normalizeStepwiseProtocol\(/);
     assert.match(app, /return value === "manual" \? "manual" : "auto";/);
   });
