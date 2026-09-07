@@ -11,7 +11,6 @@ const appSource = fs.readFileSync(appPath, "utf-8");
 
 test("App.tsx keeps local screens memoized and extracts routed screens as view modules", () => {
   const expectedScreens = [
-    "RelayScreen",
     "RelayEnvironmentScreen",
     "ContextScreen",
     "WeixinConnectScreen",
@@ -32,7 +31,7 @@ test("App.tsx keeps local screens memoized and extracts routed screens as view m
       `Expected ${screenName} to be wrapped with React.memo for view decoupling`,
     );
   }
-  const lazyScreens = ["OverviewScreen", "SessionsScreen", "DiagnosticsScreen"];
+  const lazyScreens = ["OverviewScreen", "SessionsScreen", "DiagnosticsScreen", "RelayScreen"];
   for (const screenName of lazyScreens) {
     const modulePath = `./views/${screenName}`;
     const lazyPattern = new RegExp(`const\\s+${screenName}\\s*=\\s*lazy\\(\\(\\)\\s*=>\\s*import\\(["']${modulePath}["']\\)\\)`);
@@ -45,6 +44,7 @@ test("App.tsx keeps local screens memoized and extracts routed screens as view m
   }
 
   assert.match(appSource, /route\s*===\s*["']sessions["'][\s\S]*?<SessionsScreen/, "Expected the sessions route to render the extracted lazy screen");
+  assert.match(appSource, /route\s*===\s*["']relay["'][\s\S]*?<RelayScreen/, "Expected the relay route to render the extracted lazy screen");
   assert.match(appSource, /diagnosticsScreen=\{<DiagnosticsScreen/, "Expected the about route to render the extracted diagnostics screen");
 });
 

@@ -39,7 +39,7 @@ function settings(
 }
 
 test("model route inputs keep focus while editing and label the example placeholder", async () => {
-  const source = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("./views/RelayScreen.tsx", import.meta.url), "utf8");
 
   assert.match(source, /key=\{`model-route-\$\{index\}`\}/);
   assert.doesNotMatch(source, /key=\{`\$\{route\.model\}-\$\{index\}`\}/);

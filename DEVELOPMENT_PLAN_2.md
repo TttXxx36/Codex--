@@ -294,10 +294,13 @@ graph TD
   - 第二阶段将会话历史列表、搜索/状态筛选、分页、批量删除、文件/本地分享链接导入相关渲染迁移到 `views/SessionsScreen.tsx`；通过 `SessionsScreenProps` 只接收页面数据、设置字段和最小 actions 契约，保留既有 keyset 分页参数与状态驱动行为，不新增会话业务逻辑。
   - 第二阶段将日志列表、清理/复制操作、协议代理请求诊断看板、错误筛选和脱敏报告预览迁移到 `views/DiagnosticsScreen.tsx`；AboutScreen 仅接收 lazy view，App.tsx 不再保留日志/诊断巨型 JSX。
   - 将既有 `Field`、自定义 `AppSelect` 和 `ToggleVisual` 提升为 `views/ScreenPrimitives.tsx` 共享原子，避免抽离视图时复制 UI 控件；App.tsx 模块顶层新增 SessionsScreen 与 DiagnosticsScreen 的真实 lazy import，并继续复用同一 Suspense fallback。
-  - 在 `app-decoupling.test.ts` 扩展 Overview、Sessions、Diagnostics 三个 lazy view 的动态导入、文件、默认导出和路由接入契约；不新增测试文件，维持基线计数。
+  - 在 `app-decoupling.test.ts` 扩展 Overview、Sessions、Diagnostics、Relay 四个 lazy view 的动态导入、文件、默认导出和路由接入契约；不新增测试文件，维持基线计数。
+  - 第三阶段将 RelayScreen 的供应商列表、详情编辑器、模型窗口/metadata、VLM、聚合供应商、环境冲突、公共配置与切换预检/回滚覆盖层迁移到 `views/RelayScreen.tsx`；通过 `RelayScreenActions` / `RelayScreenHelpers` 传入最小页面契约，保留既有保存、切换、测速和模型路由行为。
+  - App.tsx 在模块顶层新增 `lazy(() => import("./views/RelayScreen"))`，Relay 路由改为传入表单数据、预检/撤销状态和注入式 actions/helpers；同步把模型路由静态契约测试改为读取迁移后的 RelayScreen 源码。
 
 - **✅ 实际完成的结果 (Results & Verification)**：
   - App.tsx 从第一阶段 11,683 行进一步降至 11,016 行（较原始 11,881 行减少 865 行）；SessionsScreen、DiagnosticsScreen 已脱离 App.tsx，源码层确认三者均存在模块顶层动态 import。【S】
+  - 第三阶段在 phase-2 基线 11,016 行上继续移除 RelayScreen 2,278 行；当前 App.tsx 为 8,738 行，RelayScreen.tsx 为 2,631 行，Relay 路由与 preflight/rollback 覆盖层已脱离主 Shell，并由模块顶层动态 import 接入。【S】
   - apps/codex-plus-manager：npm test 通过 199/199，0 failure；定向 app-decoupling.test.ts 通过 2/2。【T】
   - git diff --check 通过。【S/T 辅助检查】
   - npm run check 与 npm run vite:build 均因当前环境缺少 tsc/vite 可执行文件退出；因此 TypeScript 类型检查、Vite 实际异步 chunk、主 bundle 体积和桌面端 E2E 仍为未验证，不能把源码动态导入升级为 C/D 级构建或运行证据。
