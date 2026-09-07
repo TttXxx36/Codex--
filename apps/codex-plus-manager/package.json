@@ -9,6 +9,8 @@
     "build": "cargo build -p codex-plus-launcher --release && tauri build",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "node --test \"src/*.test.ts\"",
+    "inject:build": "node ../../assets/inject/build-renderer-inject.mjs",
+    "inject:check": "node ../../assets/inject/build-renderer-inject.mjs --check",
     "vite:dev": "vite --host 127.0.0.1 --port 1420",
     "vite:build": "vite build"
   },

@@ -41,6 +41,9 @@ jobs:
       - name: Build frontend
         run: npm run vite:build
 
+      - name: Verify renderer injection bundle
+        run: npm run inject:check
+
       - name: Run frontend tests and leak gate
         run: npm test
 

@@ -321,6 +321,20 @@ graph TD
   - **验收标准**：
     - 消除全局变量污染，构建产物与原功能 100% 等价。
 
+- **🛠️ 第一阶段实际完成的步骤 (Actual Steps — Phase 1)**：
+  - 在 `assets/inject/src/` 建立按职责划分的有序源码模块：`core/`、`dom/`、`session/`、`patch/`、`bridge/`、`features/` 与 `entry/`，将原 IIFE 按原始词法边界拆为 17 个可审阅文件；不改写函数体、初始化顺序或注入协议。
+  - 新增 `assets/inject/build-renderer-inject.mjs`，使用 Node 内置 API 将源码模块确定性拼接为单一自包含 IIFE；不引入运行时依赖、不改变 Rust 产物路径。
+  - `apps/codex-plus-manager/package.json` 新增 `inject:build` 与 `inject:check`；后者比较生成字节与已登记产物，并接入既有 `.github/workflows/ci.yml` frontend job 作为本地/CI 漂移门禁。
+  - `crates/codex-plus-core/src/assets.rs` 未修改；静态复核确认仍通过 `include_str!("../../../assets/inject/renderer-inject.js")` 消费同一产物。
+
+- **🟡 第一阶段结果与验证 (Results & Verification — pending architect review)**：
+  - `npm run inject:build`：通过；产物 **483004 bytes**，SHA-256 `01e0f4f33fed22227012fd7bc55c9bfa538073e918bb6484cebf2f7d6959e612`。
+  - `npm run inject:check`：通过；生成内容与改造前 `renderer-inject.js` 字节级一致，证明本阶段未改变注入运行时。
+  - `node --check assets/inject/renderer-inject.js`：通过。
+  - `apps/codex-plus-manager`：`npm test` 通过 **199/199**，0 failure。
+  - `git diff --check`：通过；仅有 Git 的 LF→CRLF 提示，无 whitespace error。
+  - 未安装依赖、未运行 TypeScript/Vite/Cargo、未执行桌面 E2E；这些构建与运行证据仍未验证。未提交、未推送，保留现场等待架构师审查“lexical modules → 显式 ESM 依赖图”的下一步边界。
+
 ---
 
 ### 【任务 24 (P2 / PERF-007)】测速矩阵真实流式 TTFT 采集与 3xx 判定严谨化
