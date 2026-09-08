@@ -113,3 +113,39 @@ Codex 在执行审查环节时，必须严格按照以下三步执行，并输�
 - **`Pass`**：完全满足 8 大闸门与缺陷修复要求，无倒退隐患，准入进入全面测试执行；
 - **`Conditional Pass`**：逻辑与静态无误，但依赖外部环境验证（如特定 Windows/macOS 桌面 E2E 或云端 CI 矩阵）；
 - **`Block`**：存在凭据泄露风险、假成功隐患、死锁重试或严重性能回退，打回由工兵修复。
+
+---
+
+## 📝 5. 全量代码审查执行与复核归档 (2026-09-07 审查闭环)
+
+### 5.1 审查基线与协同角色
+- **审查日期**：2026-09-07 22:45 (UTC+8)
+- **审查基线**：分支 `Gemini`，源码基线 `60debe3` (v1.2.59)
+- **执行角色**：
+  - **工兵审查员 (Codex)**：严格依据本大纲 4 大走查板块进行全量静态分析与用例实测，输出《审查结论报告》（`AUDIT_CONCLUSION_REPORT.md`），恪守只诊断不擅改代码原则；
+  - **首席架构师 (Antigravity)**：对 Codex 报告开展全项独立技术复核、远程 CI 失败日志下钻与代码 Diff 确认，核准审查结论并主导分批修复推进。
+
+### 5.2 八大审查闸门实测裁决汇总
+
+| 审查闸门 | 审查结论 | 证据等级 | 核心依据与风险分析 |
+| :--- | :---: | :---: | :--- |
+| **1. 凭据与脱敏** | **Fail / Partial** | S / T(前端) | 生产日志与诊断面板脱敏完备；但 Rust `diagnostic_log.rs` 与 `stepwise.rs` 测试 mock 中存在字面量 `Bearer ` 字符串未运行时拼接；`share.rs` 仍有失效公网域名残留。 |
+| **2. 命令契约与假成功** | **Partial** | S | `relay_switch.rs` 具原子快照与 CAS 校验；但 `commands.rs` 仍有部分命令使用非标准 `{status,message,payload}`，未全量统一至 `CommandActionResult`。 |
+| **3. Loopback 与生命周期** | **Pass** | S / T(Rust) | `/helper/shutdown` 具备 Token 鉴权与 OPTIONS 405；`launcher.rs` 强制 IP 回环校验，通配 CORS 彻底废除并改为本地与 Tauri 白名单，Bearer 鉴权大小写兼容，单测全绿。 |
+| **4. 配置与文件原子性** | **Pass** | S / T(Rust) | `storage.rs` 备份写失败立即抛错并阻断清理；文件删除失败执行 undo 时校验回滚状态，若失败返回 `recovery_required` 显式标明并保留恢复凭证。 |
+| **5. 环境变量与 401 隔离** | **Conditional Pass** | S / T(前端) | 严格基于白名单、真实值与哈希比对，支持原子备份与 UI 还原；非 UTF-8 环境值存在 lossy 转换边缘情况。 |
+| **6. 供应链与配额** | **Fail (P1-05)** | S | 脚本市场 SHA 校验可选；解压 ZIP 未设单文件/总大小/文件数/深度配额；多处 CI 工作流使用 `npm install --package-lock=false` 未锁定依赖。 |
+| **7. 性能真实性与代理** | **Partial** | S / T(前端) | 移除了 0.7 乘数，单库具备 covering index 与 zero-copy 字节流；但多库 keyset 分页路径仍调用 `list_local_session_ids()` 进行跨库全量扫描。 |
+| **8. 模块边界与注入漂移** | **Pass** | S / T / C | 14 个 Screen 具备 lazy 异步拆分，注入 SHA-256 0 漂移；语法错误与模块类型已修复，`npm run check` 0 错误，`npm run vite:build` 成功（首屏主 Chunk 433.65 KB）。 |
+
+### 5.3 阻断性缺陷清单与当前处置状态
+1. **P1-01 [构建阻断 - 已闭环 PASS]**：`App.tsx` 孤立 `}` 与 `EnhanceScreen.tsx` 闭合 `}` 已修复；次级导入别名补齐，`npm run check` 0 错误，`npm run vite:build` 成功通过；
+2. **P1-02 [网络安全 - 已闭环 PASS]**：Helper 监听强制 `127.0.0.1` / `::1` 回环，通配 CORS 完全消除，Bearer 鉴权大小写不敏感解析完成，通过定向测试；
+3. **P1-03 & P1-04 [数据原子性 - 已闭环 PASS]**：`storage.rs` 备份失败显式拦截，关联文件删除失败若回滚失败返回 `recovery_required` 并保留 token，杜绝假成功；
+4. **P1-05 [供应链安全 - 已闭环 PASS]**：工作流全面改用 `npm ci` 锁定依赖版本，`ZipExtractionBudget` 增加单文件 50 MiB/总解压 200 MiB/文件数 1024 限制，防止 ZIP 炸弹；
+5. **Rust 编译与借用安全 [已闭环 PASS]**：`commands.rs:2574` 临时 format 借用生命周期修复、`launcher.rs` Arc mutex 类型修复、`protocol_proxy.rs` 借用冲突消除；
+6. **代码规范 - 待推进 Batch 4**：统一执行 `cargo fmt` 消除 CI 远程格式差异。列入 **Batch 4**。
+
+### 5.4 最终审查判定
+- **综合评定**：**`Block` (阻断，不予准入发布)**
+- **后续动作**：按四阶段蓝图执行工兵修复与架构师复核，缺陷全部清零并通过云端双矩阵 CI 后方可解除阻断。

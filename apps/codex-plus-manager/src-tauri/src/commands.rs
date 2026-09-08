@@ -2569,19 +2569,15 @@ pub fn list_local_sessions(
     };
     let page = response_offset / limit + 1;
     if errors.is_empty() {
-        ok(
-            if use_keyset {
-                &format!("已读取游标第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
-            } else {
-                &format!("已读取第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
-            },
-            payload,
-        )
+        let message = if use_keyset {
+            format!("已读取游标第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
+        } else {
+            format!("已读取第 {page} 页，共 {} 个本地会话。", payload.sessions.len())
+        };
+        ok(&message, payload)
     } else {
-        failed(
-            &format!("读取部分本地会话失败：{}", errors.join("; ")),
-            payload,
-        )
+        let message = format!("读取部分本地会话失败：{}", errors.join("; "));
+        failed(&message, payload)
     }
 }
 

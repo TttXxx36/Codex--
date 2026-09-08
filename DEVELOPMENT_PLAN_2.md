@@ -421,6 +421,55 @@ graph TD
 
 ---
 
+### 【任务 27 (P0 / AUDIT-REMEDIATION)】全量代码审查、多层测试执行与构建阻断缺陷闭环治理
+
+- **🎯 阶段计划 (Plan)**：
+  - 依照 `AUDIT_PLAN.md` 与 `TESTING_PLAN.md` 标准，双 AI 协同推进全量静态走查、多层单元与集成测试、性能基准及 CI 外环监控；
+  - 严谨识别第一轮与第二轮（Tasks 01~26）交付代码中的深层暗病、语法隐患与门禁阻断项，制定四阶段分批治理方案并落地闭环。
+
+- **🛠️ 实际完成的步骤 (Actual Steps)**：
+  1. **审查与多层测试执行**：Codex 依据规范完成全量代码走查与 4 个测试板块实测，归档《审查结论报告》(`AUDIT_CONCLUSION_REPORT.md`) 与《全量测试执行记录》(`memory/task-log/2026-09-07-testing-validation.md`)，并严格恪守“只诊断不擅改代码”原则；
+  2. **架构师独立复验与 CI 故障下钻**：架构师 Antigravity 针对 Codex 提出的阻断项开展逐一复验，并下钻 GitHub Actions Run [`34134023662`](https://github.com/TttXxx36/Codex--/actions/runs/34134023662)，确证：
+     - **P1-01**：`App.tsx:3839` 冗余闭合 `}` 与 `EnhanceScreen.tsx:260` 缺失闭合 `}`，导致 `npm run check` (TS1128, TS1005) 与 `npm run vite:build` 语法报错中断；
+     - **CI 门禁**：云端 Rust 矩阵因 `commands.rs`、`launcher.rs` 等文件存在 `cargo fmt` 格式缩进差异而中断；
+     - **P1-02**：`launcher.rs` 中 Helper bind 允许非回环配置与通配 CORS；
+     - **P1-03 & P1-04**：`storage.rs` 纯 API 备份删除 `.ok()` 吞没与 Undo 回滚假成功；
+     - **P1-05**：`pr-build.yml` 与 `release-assets-*.yml` 中使用 `npm install --package-lock=false` 导致依赖未锁定。
+  3. **架构师审定与分派启动**：
+     - 正式核准 Codex 提出的 `Block` 判定，冻结发布；
+     - 制定四阶段修复路线图（Batch 1 语法阻断 -> Batch 2 安全/原子性 -> Batch 3 供应链锁定 -> Batch 4 格式化与重测）；
+     - 向 Codex 正式下发 Batch 1 任务分派指令（聚焦 P1-01 语法阻断修复与构建门禁复苏）。
+  4. **Batch 1 语法阻断与构建门禁复苏 (已闭环)**：
+     - Codex 精准完成 `App.tsx:3818` 孤立 `}` 剔除与 `EnhanceScreen.tsx:260` 闭合 `}` 补齐；
+     - 架构师即刻推进编译穿透，消除拆分视图遗留的 `UiBadge` 别名与模块导入缺失（`AboutScreen.tsx` 补 `Textarea`，`EnhanceScreen.tsx` 对齐 `Badge`，`UserScriptsScreen.tsx` / `ZedRemoteScreen.tsx` 补 `Trash2`，`RelayScreen.tsx` 补齐解构与类型断言）；
+     - 触发全量内环编译实测，`npm run check` 实现 **0 错误全绿通过**，`npm run vite:build` 编译成功。
+  5. **Batch 2 安全边界与存储事务原子性加固 (已闭环)**：
+     - `launcher.rs`：`helper_bind_host` 强制校验 IP 回环属性，非法非回环 IP 强力回退并预警；彻底消除 `Access-Control-Allow-Origin: *` 通配标头，严格限定仅回显本地域名（`127.0.0.1` / `localhost` / `[::1]`）与 Tauri/Codex 专属 Origin；停机 Bearer Token 增加大小写不敏感解析；
+     - `storage.rs`：阻断写备份失败吞没，若备份失败立刻终止删除流程并抛出错误；删除关联文件失败回滚时，显式检查 `undo_result`，若回滚失败诚实返回 `recovery_required` 状态与真实原因，坚决杜绝假成功；
+     - `models.rs`：数据契约模型新增 `DeleteStatus::RecoveryRequired` 状态枚举与 serde 序列化测试。
+
+- **✅ 实际完成的结果 (Results & Verification)**：
+  - **P1-01 彻底清零解除**：`npm run check` 0 TS 错误；`npm run vite:build` 2.31s 成功生成构建产物；【C】
+  - **P1-02 安全边界收紧闭环**：回环监听强制生效，通配 CORS 完全消除，Bearer 鉴权大小写兼容；新增 4 项 Rust 边界测试用例；【S/T】
+  - **P1-03 & P1-04 存储原子性彻底闭环**：备份失败必阻断，回滚失败诚实上报 `recovery_required`，杜绝 UI 假成功；【S/T】
+  - **模块解耦与产物体积达标**：14 个 Screen 模块完全异步按需打包；首屏主 Chunk `index-*.js` 仅 **433.65 KB** (gzip: 140.03 KB)，完全符合大纲 < 500 KB 性能预算；【C/T】
+  - **单测基线与防漂移坚挺**：`npm test` 200/200 绿灯通过 (621.68ms)；`npm run inject:check` 483004 字节 SHA-256 0 漂移；`git diff --check` 0 异常；【T】
+  - **合成性能超额达标**：10,000 条合成会话覆盖索引 Keyset 分页查询实测 p50 0.177ms / p95 0.221ms（远优于 p50 < 1ms / p95 < 5ms 预算）；【T】
+  - **下一阶段推进**：P1-01、P1-02、P1-03、P1-04 全量闭环，即刻进入 **Batch 3**（P1-05 供应链工作流锁版本与解压配额）。
+  - **Batch 3 供应链依赖锁定与安全配额加固 (已闭环)**：
+    - `.github/workflows/pr-build.yml`、`release-assets-all.yml`、`release-assets-windows.yml`：全面替换 `npm install --package-lock=false` 为 `npm ci`，严格锁定 package-lock 生产依赖版本；
+    - `plugin_marketplace.rs` & `skills.rs`：实现 `ZipExtractionBudget` 安全防线，严格限制单文件 50 MiB、总解压 200 MiB、文件数 1024 限制，防止 ZIP 炸弹攻击与磁盘耗尽；并在提取失败时自动清理临时目录。
+  - **Windows CI 编译与发布阻塞根因清除 (已闭环)**：
+    - 针对 GitHub Actions 构建 Windows 安装包时出现的编译阻断进行深度攻坚：
+      1. `EnhanceScreen.tsx:260`：确证此前 `FeatureToggle` 漏闭大括号问题已在 `9b9cd1a` 修复，本地与云端 Vite 均已顺利编译，首屏 Chunk 433.65 KB；
+      2. `launcher.rs:1134`：将 `DefaultLaunchHooks.bridge_websocket_url` 包装为 `Arc<Mutex<Option<String>>>`，解决 `clone()` 丢失问题；
+      3. `protocol_proxy.rs`：修复临时 `json!({})` 借用释放悬垂及 `item` 借用冲突；
+      4. `commands.rs:2574`：`list_local_sessions` 中提取 `message` 为独立绑定变量，彻底消除临时 `format!` 字符串在 `ok()` / `failed()` 借用释放缺陷；
+      5. 清理 `apps/codex-plus-launcher`、`src-tauri/src/lib.rs`、`grok_config.rs`、`share.rs` 中的未使用变量与冗余导入，消除 Rust 编译器 warning。
+
+---
+
+
 ## 🛑 跨任务数据安全准则与终止条件
 
 1. **凭据安全绝对红线**：

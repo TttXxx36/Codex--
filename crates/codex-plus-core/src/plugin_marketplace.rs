@@ -31,6 +31,67 @@ const OPENAI_PLUGINS_DOWNLOAD_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 const CODEX_PLUS_MARKETPLACE_ZIP: &[u8] =
     include_bytes!("../../../assets/plugin-marketplaces/openai-curated-remote.zip");
 
+/// ZIP 解压配额：限制单个文件、总展开体积和文件条目数，避免压缩炸弹耗尽资源。
+pub(crate) const ZIP_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
+pub(crate) const ZIP_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
+pub(crate) const ZIP_MAX_FILE_COUNT: usize = 1024;
+
+#[derive(Debug, Default)]
+pub(crate) struct ZipExtractionBudget {
+    file_count: usize,
+    total_bytes: u64,
+}
+
+impl ZipExtractionBudget {
+    pub(crate) fn read_file(
+        &mut self,
+        name: &str,
+        declared_size: u64,
+        reader: &mut impl Read,
+    ) -> anyhow::Result<Vec<u8>> {
+        if declared_size > ZIP_MAX_FILE_BYTES {
+            anyhow::bail!(
+                "zip entry {name} exceeds the 50 MiB uncompressed file limit"
+            );
+        }
+        if self.file_count >= ZIP_MAX_FILE_COUNT {
+            anyhow::bail!("zip contains more than 1024 files");
+        }
+        let reserved_total = self
+            .total_bytes
+            .checked_add(declared_size)
+            .ok_or_else(|| anyhow::anyhow!("zip uncompressed size limit overflow"))?;
+        if reserved_total > ZIP_MAX_TOTAL_BYTES {
+            anyhow::bail!("zip exceeds the 200 MiB uncompressed size limit");
+        }
+
+        let mut contents = Vec::with_capacity(declared_size as usize);
+        reader
+            .take(ZIP_MAX_FILE_BYTES + 1)
+            .read_to_end(&mut contents)
+            .with_context(|| format!("failed to read zip entry {name}"))?;
+        let actual_size = contents.len() as u64;
+        if actual_size > ZIP_MAX_FILE_BYTES {
+            anyhow::bail!(
+                "zip entry {name} exceeds the 50 MiB uncompressed file limit"
+            );
+        }
+        if self
+            .total_bytes
+            .checked_add(actual_size)
+            .map_or(true, |total| total > ZIP_MAX_TOTAL_BYTES)
+        {
+            anyhow::bail!("zip exceeds the 200 MiB uncompressed size limit");
+        }
+
+        self.file_count += 1;
+        // Reserve by the archive's declared size so a malformed entry cannot make
+        // the following entries exceed the total quota after a short read.
+        self.total_bytes = reserved_total;
+        Ok(contents)
+    }
+}
+
 pub fn ensure_openai_curated_marketplace_config(home: &Path) -> anyhow::Result<bool> {
     let mut changed = cleanup_managed_reserved_marketplace_configs(home)?;
     if let Some(remote_marketplace_root) = local_openai_curated_remote_marketplace_root(home)? {
@@ -415,6 +476,7 @@ fn install_openai_curated_remote_marketplace_zip(home: &Path, bytes: &[u8]) -> a
 fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
     let cursor = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).context("failed to read openai/plugins zip")?;
+    let mut budget = ZipExtractionBudget::default();
     for index in 0..archive.len() {
         let mut file = archive
             .by_index(index)
@@ -432,9 +494,9 @@ fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Resul
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .with_context(|| format!("failed to read zip entry {}", file.name()))?;
+        let entry_name = file.name().to_string();
+        let entry_size = file.size();
+        let contents = budget.read_file(&entry_name, entry_size, &mut file)?;
         std::fs::write(&output_path, contents)
             .with_context(|| format!("failed to write {}", output_path.display()))?;
     }
@@ -444,6 +506,7 @@ fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Resul
 fn extract_zip_exact(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
     let cursor = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).context("failed to read embedded plugin zip")?;
+    let mut budget = ZipExtractionBudget::default();
     for index in 0..archive.len() {
         let mut file = archive
             .by_index(index)
@@ -459,9 +522,9 @@ fn extract_zip_exact(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .with_context(|| format!("failed to read zip entry {}", file.name()))?;
+        let entry_name = file.name().to_string();
+        let entry_size = file.size();
+        let contents = budget.read_file(&entry_name, entry_size, &mut file)?;
         std::fs::write(&output_path, contents)
             .with_context(|| format!("failed to write {}", output_path.display()))?;
     }
@@ -928,6 +991,33 @@ mod tests {
         .unwrap();
     }
 
+    fn plugin_zip_with_extra_files(extra_files: usize) -> Vec<u8> {
+        let mut buffer = Cursor::new(Vec::<u8>::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buffer);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer
+                .start_file("plugins-main/.agents/plugins/marketplace.json", options)
+                .unwrap();
+            std::io::Write::write_all(
+                &mut writer,
+                br#"{"name":"openai-curated","plugins":[{"name":"gmail","path":"./plugins/gmail"}]}"#,
+            )
+            .unwrap();
+            for index in 0..extra_files {
+                writer
+                    .start_file(
+                        format!("plugins-main/plugins/gmail/file-{index}.txt"),
+                        options,
+                    )
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        buffer.into_inner()
+    }
+
     #[test]
     fn ensure_openai_curated_marketplace_config_removes_managed_reserved_entries() {
         let temp = tempfile::tempdir().unwrap();
@@ -1321,6 +1411,87 @@ source = '\\?\{}'
         );
         assert_eq!(zip_entry_relative_path("plugins-main/../evil.txt"), None);
         assert_eq!(zip_entry_relative_path("../evil.txt"), None);
+    }
+
+    #[test]
+    fn zip_extraction_budget_enforces_file_size_total_and_count_limits() {
+        let mut file_budget = ZipExtractionBudget::default();
+        let mut reader = Cursor::new(Vec::<u8>::new());
+        let error = file_budget
+            .read_file("large.bin", ZIP_MAX_FILE_BYTES + 1, &mut reader)
+            .unwrap_err();
+        assert!(error.to_string().contains("50 MiB"));
+
+        let mut total_budget = ZipExtractionBudget::default();
+        let full_files = (ZIP_MAX_TOTAL_BYTES / ZIP_MAX_FILE_BYTES) as usize;
+        for index in 0..full_files {
+            let mut reader = Cursor::new(Vec::<u8>::new());
+            total_budget
+                .read_file(
+                    &format!("file-{index}.bin"),
+                    ZIP_MAX_FILE_BYTES,
+                    &mut reader,
+                )
+                .unwrap();
+        }
+        let mut reader = Cursor::new(Vec::<u8>::new());
+        let error = total_budget
+            .read_file("over-total.bin", 1, &mut reader)
+            .unwrap_err();
+        assert!(error.to_string().contains("200 MiB"));
+
+        let mut count_budget = ZipExtractionBudget::default();
+        for index in 0..ZIP_MAX_FILE_COUNT {
+            let mut reader = Cursor::new(Vec::<u8>::new());
+            count_budget
+                .read_file(&format!("file-{index}.bin"), 0, &mut reader)
+                .unwrap();
+        }
+        let mut reader = Cursor::new(Vec::<u8>::new());
+        let error = count_budget
+            .read_file("over-count.bin", 0, &mut reader)
+            .unwrap_err();
+        assert!(error.to_string().contains("1024"));
+    }
+
+    #[test]
+    fn plugin_zip_limit_errors_clean_both_staging_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let zip = plugin_zip_with_extra_files(ZIP_MAX_FILE_COUNT);
+
+        let error = install_openai_plugins_zip(temp.path(), &zip).unwrap_err();
+        assert!(error.to_string().contains("1024"));
+        let staging_leftovers = std::fs::read_dir(temp.path().join(".tmp"))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with("plugins-download-")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        assert_eq!(staging_leftovers, 0);
+
+        let error = install_openai_curated_remote_marketplace_zip(temp.path(), &zip).unwrap_err();
+        assert!(error.to_string().contains("1024"));
+        let embedded_staging_leftovers = std::fs::read_dir(temp.path().join(".tmp"))
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with("plugins-remote-embedded-")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        assert_eq!(embedded_staging_leftovers, 0);
     }
 
     #[test]

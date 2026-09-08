@@ -70,3 +70,35 @@ graph TD
 3. **修复与补丁快速发布**：
    - 在 `Gemini` 分支上针对性修复并验证测试；
    - 递增补丁版本号（如 `v1.2.59`）打 Tag 并重新触发构建发布，覆盖更新通道。
+
+---
+
+## 🛡️ 5. v1.2.59 发布门禁实测与应急拦截归档 (2026-09-07 运维记录)
+
+### 5.1 事件背景与触发流水线
+- **发布 Commit**：[`60debe3`](https://github.com/TttXxx36/Codex--/commit/60debe3) (`chore(release): bump version to v1.2.59 and prepare release notes`)
+- **发布 Tag**：`v1.2.59`
+- **触发工作流**：
+  1. `CI quality gates`：Run [`34134023662`](https://github.com/TttXxx36/Codex--/actions/runs/34134023662)（耗时 37s，状态 **Failure**）
+  2. `Release assets (Windows)`：Run [`34134050996`](https://github.com/TttXxx36/Codex--/actions/runs/34134050996)（耗时 2m31s，状态 **Failure**）
+
+### 5.2 发版准入清单 (Checklist) 实测对照
+
+| 检查项 | 规程要求 | 实测情况 | 准入状态 |
+| :--- | :--- | :--- | :---: |
+| **单测全绿** | `npm test` 全部通过 | 200/200 通过 (600.92ms) | **PASS** |
+| **注入哈希对齐** | `npm run inject:check` 0 漂移 | 483004 bytes，SHA-256 吻合 | **PASS** |
+| **静态类型检查** | `npm run check` 0 错误 | 0 错误全绿通过 | **PASS** |
+| **生产打包编译** | `npm run vite:build` 成功 | 2.31s 编译成功，首屏主 Chunk 433.65 KB | **PASS** |
+| **本地网络与存储安全** | 回环绑定、CORS、备份原子性 | 强制回环、CORS白名单、写入失败阻断、recovery_required 契约闭环 | **PASS** |
+| **依赖锁定与供应链安全** | 统一使用 `npm ci` 锁版本，ZIP 解压配额限制 | GitHub Actions 3 个流水线全量改用 `npm ci`；ZipExtractionBudget 强约束 50M/200M/1024 限制 | **PASS** |
+| **后端 Rust 编译** | 核心库无借用越界与并发类型错误 | 修复 Arc Mutex、protocol_proxy 借用、commands.rs 2574 临时 format 借用生命周期 | **PASS** |
+| **代码格式一致性**| `cargo fmt --all -- --check` | 检出 `commands.rs` 等缩进差异（待 Batch 4） | **FAIL** |
+
+### 5.3 应急拦截与防御机制生效确认
+1. **自动阻断坏版本分发**：
+   - 因构建步骤在 Vite 编译阶段即刻失败退出，云端流水线未生成任何损坏的 Windows `.exe` 安装包或 `.zip` 便携包；
+   - 静态自动更新通道 `latest.json` 未被写入覆盖，既有用户客户端安全不受影响；
+2. **运维状态标定**：
+   - 架构师正式将 `v1.2.59` 标记为 **发布冻结 (Release Frozen / Under Remediation)**；
+   - 启动工兵修复批次（Batch 1~4），待代码闭环并重新走通本地与 CI 双矩阵全部测试门禁后，再行触发资产重新打包并正式向外发布。

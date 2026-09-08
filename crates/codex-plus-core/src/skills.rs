@@ -16,7 +16,7 @@
 //! Windows 上建软链需要开发者模式或管理员权限，失败时自动回退成复制。
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -756,6 +756,7 @@ pub fn extract_skill_subtree(
     let prefix = format!("{repo_path}/");
     let mut archive =
         zip::ZipArchive::new(Cursor::new(zip_bytes)).context("skill 仓库压缩包无法解析")?;
+    let mut budget = crate::plugin_marketplace::ZipExtractionBudget::default();
     let mut wrote_manifest = false;
 
     for index in 0..archive.len() {
@@ -792,9 +793,9 @@ pub fn extract_skill_subtree(
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("创建目录失败：{}", parent.display()))?;
         }
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .with_context(|| format!("读取压缩包条目 {} 失败", file.name()))?;
+        let entry_name = file.name().to_string();
+        let entry_size = file.size();
+        let contents = budget.read_file(&entry_name, entry_size, &mut file)?;
         std::fs::write(&output_path, contents)
             .with_context(|| format!("写入 {} 失败", output_path.display()))?;
         if inner == SKILL_MANIFEST_FILE {
@@ -1094,6 +1095,26 @@ mod tests {
         buffer.into_inner()
     }
 
+    fn repo_zip_with_file_count(extra_files: usize) -> Vec<u8> {
+        let mut buffer = Cursor::new(Vec::<u8>::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut buffer);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            for index in 0..extra_files {
+                writer
+                    .start_file(format!("skills-main/alpha/file-{index}.txt"), options)
+                    .unwrap();
+            }
+            writer.start_file("skills-main/alpha/SKILL.md", options).unwrap();
+            writer
+                .write_all(b"---\nname: alpha\n---\n")
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        buffer.into_inner()
+    }
+
     fn sample_skill(id: &str, repo_path: &str, hash: &str) -> RemoteSkill {
         RemoteSkill {
             id: id.to_string(),
@@ -1206,6 +1227,28 @@ mod tests {
         let error = extract_skill_subtree(&zip, "alpha", &temp.path().join("alpha")).unwrap_err();
 
         assert!(error.to_string().contains("SKILL.md"));
+    }
+
+    #[test]
+    fn install_rejects_too_many_files_and_cleans_staging() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = manager(&temp);
+        let zip = repo_zip_with_file_count(crate::plugin_marketplace::ZIP_MAX_FILE_COUNT);
+
+        let error = manager
+            .install_from_zip(&sample_skill("alpha", "alpha", "hash-1"), &zip)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("1024"));
+        let leftovers = std::fs::read_dir(manager.source_dir())
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| entry.file_name().to_string_lossy().starts_with(".staging-"))
+                    .count()
+            })
+            .unwrap_or(0);
+        assert_eq!(leftovers, 0);
     }
 
     #[test]

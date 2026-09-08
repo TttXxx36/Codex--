@@ -33,7 +33,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: apps/codex-plus-manager
-        run: npm install --package-lock=false
+        run: npm ci
 
       - name: Build frontend
         working-directory: apps/codex-plus-manager
@@ -109,7 +109,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: apps/codex-plus-manager
-        run: npm install --package-lock=false
+        run: npm ci
 
       - name: Build frontend
         working-directory: apps/codex-plus-manager
