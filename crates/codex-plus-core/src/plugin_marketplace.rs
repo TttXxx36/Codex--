@@ -529,9 +529,13 @@ fn install_openai_curated_remote_marketplace_zip(home: &Path, bytes: &[u8]) -> a
     result
 }
 
+const MAX_PLUGIN_ZIP_ENTRY_SIZE: u64 = 32 * 1024 * 1024;
+const MAX_PLUGIN_ZIP_TOTAL_UNPACKED: usize = 128 * 1024 * 1024;
+
 fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
     let cursor = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).context("failed to read openai/plugins zip")?;
+    let mut unpacked_total = 0usize;
     for index in 0..archive.len() {
         let mut file = archive
             .by_index(index)
@@ -550,8 +554,17 @@ fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Resul
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
         let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
+        file.by_ref()
+            .take(MAX_PLUGIN_ZIP_ENTRY_SIZE + 1)
+            .read_to_end(&mut contents)
             .with_context(|| format!("failed to read zip entry {}", file.name()))?;
+        if contents.len() as u64 > MAX_PLUGIN_ZIP_ENTRY_SIZE {
+            anyhow::bail!("插件 ZIP 单文件大小超过 32 MiB 限制：{}", file.name());
+        }
+        unpacked_total = unpacked_total.saturating_add(contents.len());
+        if unpacked_total > MAX_PLUGIN_ZIP_TOTAL_UNPACKED {
+            anyhow::bail!("插件 ZIP 解压总体积超过 128 MiB 限制");
+        }
         std::fs::write(&output_path, contents)
             .with_context(|| format!("failed to write {}", output_path.display()))?;
     }
@@ -561,6 +574,7 @@ fn extract_openai_plugins_zip(bytes: &[u8], destination: &Path) -> anyhow::Resul
 fn extract_zip_exact(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
     let cursor = Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).context("failed to read embedded plugin zip")?;
+    let mut unpacked_total = 0usize;
     for index in 0..archive.len() {
         let mut file = archive
             .by_index(index)
@@ -577,8 +591,17 @@ fn extract_zip_exact(bytes: &[u8], destination: &Path) -> anyhow::Result<()> {
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
         let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
+        file.by_ref()
+            .take(MAX_PLUGIN_ZIP_ENTRY_SIZE + 1)
+            .read_to_end(&mut contents)
             .with_context(|| format!("failed to read zip entry {}", file.name()))?;
+        if contents.len() as u64 > MAX_PLUGIN_ZIP_ENTRY_SIZE {
+            anyhow::bail!("插件 ZIP 单文件大小超过 32 MiB 限制：{}", file.name());
+        }
+        unpacked_total = unpacked_total.saturating_add(contents.len());
+        if unpacked_total > MAX_PLUGIN_ZIP_TOTAL_UNPACKED {
+            anyhow::bail!("插件 ZIP 解压总体积超过 128 MiB 限制");
+        }
         std::fs::write(&output_path, contents)
             .with_context(|| format!("failed to write {}", output_path.display()))?;
     }

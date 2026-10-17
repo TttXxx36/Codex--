@@ -354,14 +354,8 @@ describe("renderer injection header compatibility", () => {
   it("把三个 rail 入口都接成独立页面，并跟随 Codex 的界面缩放", async () => {
     const renderer = await readFile(new URL("../../../assets/inject/renderer-inject.js", import.meta.url), "utf8");
 
-    // 推荐内容从弹窗二级 tab 提成图标栏上的一级入口。
-    assert.match(renderer, /const codexPlusRailSponsorId = "codex-plus-rail-sponsor"/);
-    assert.match(renderer, /const codexPlusSponsorTab = "sponsor"/);
-    assert.match(renderer, /function openCodexPlusSponsor\(\)/);
-    assert.match(renderer, /id: codexPlusRailSponsorId, label: "推荐内容"/);
-    // 三个入口都要参与选中态映射，否则「推荐内容」亮不起来。
-    assert.match(renderer, /\[codexPlusRailSponsorId, "sponsor"\],/);
-    assert.match(renderer, /if \(tab === codexPlusSponsorTab\) return "sponsor";/);
+    // 0 广告、0 推广：推荐内容不挂载在图标栏上，确保界面纯净
+    assert.doesNotMatch(renderer, /id:\s*codexPlusRailSponsorId,\s*label:\s*"推荐内容"/);
 
     // 弹窗里的 tab 条已随入口外移删除，不该再有残留。
     assert.doesNotMatch(renderer, /codex-plus-tab-button/);

@@ -31,13 +31,9 @@ The Windows installer creates Desktop and Start Menu shortcuts. On macOS, drag `
 
 **Upgrading an older macOS version:** The old two-app updater cannot install the new single-app package. Quit both old apps, then drag `Codex++.app` from the new DMG into Applications and replace the old app with the same name. Remove the old `Codex++ 管理工具.app`. Existing settings and session data are preserved.
 
-## Community and Support
+## Feedback and Issues
 
-Join <a href="https://qm.qq.com/q/5h3pxpxg7S">Codex++ community group 4 (QQ group: 1127858981)</a> to report issues, share feedback, or suggest features.
-
-Telegram: <https://t.me/CodexPlusPlus>
-
-Friendly link: <a href="https://linux.do">LINUX DO</a>
+Encountered any issue? Please submit a ticket via [GitHub Issues](https://github.com/TttXxx36/Codex--/issues) with your environment, Codex-- version, reproduction steps, and sanitized logs.
 
 ## Current Features
 

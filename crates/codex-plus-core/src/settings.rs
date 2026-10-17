@@ -413,15 +413,15 @@ impl Default for DreamSkinThemeConfig {
             );
             extra_fields.insert(
                 "promoTitle".to_string(),
-                Value::String("感谢 Passion8 赞助".to_string()),
+                Value::String(String::new()),
             );
             extra_fields.insert(
                 "promoSub".to_string(),
-                Value::String("passion8.cc".to_string()),
+                Value::String(String::new()),
             );
             extra_fields.insert(
                 "promoUrl".to_string(),
-                Value::String("https://passion8.cc/register?aff=TuPe".to_string()),
+                Value::String(String::new()),
             );
         }
         Self {

@@ -975,12 +975,63 @@ impl DefaultLaunchHooks {
     }
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host.starts_with("127.")
+}
+
 fn helper_bind_host() -> String {
     std::env::var("CODEX_PLUS_HELPER_BIND")
         .ok()
         .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .filter(|value| is_loopback_host(value))
         .unwrap_or_else(|| "127.0.0.1".to_string())
+}
+
+fn is_trusted_origin(origin: &str) -> bool {
+    let origin = origin.trim();
+    if origin.is_empty() || origin == "null" {
+        return true;
+    }
+    if origin.starts_with("vscode-file://")
+        || origin.starts_with("vscode-webview://")
+        || origin.starts_with("tauri://")
+    {
+        return true;
+    }
+    let rest = if let Some(rest) = origin.strip_prefix("http://") {
+        rest
+    } else if let Some(rest) = origin.strip_prefix("https://") {
+        rest
+    } else {
+        return false;
+    };
+    let host_and_port = rest.split('/').next().unwrap_or(rest);
+    let host = if let Some(bracket_end) = host_and_port.strip_prefix('[') {
+        if let Some((ipv6, _)) = bracket_end.split_once(']') {
+            ipv6
+        } else {
+            return false;
+        }
+    } else {
+        host_and_port.split(':').next().unwrap_or(host_and_port)
+    };
+    if host.eq_ignore_ascii_case("tauri.localhost") {
+        return true;
+    }
+    is_loopback_host(host)
+}
+
+fn cors_origin_header(origin: Option<&str>) -> String {
+    match origin {
+        Some(o) if is_trusted_origin(o) => {
+            format!("Access-Control-Allow-Origin: {o}\r\nVary: Origin\r\n")
+        }
+        None => "Access-Control-Allow-Origin: http://127.0.0.1\r\n".to_string(),
+        Some(_) => String::new(),
+    }
 }
 
 #[async_trait(?Send)]
@@ -1674,7 +1725,25 @@ async fn handle_helper_connection(
         header_value_from_headers(&request_headers, "x-opencode-session");
     let request_content_type = header_value_from_headers(&request_headers, "content-type");
     let request_content_encoding = header_value_from_headers(&request_headers, "content-encoding");
+    let request_origin = header_value_from_headers(&request_headers, "origin");
     let remote_addr_text = remote_addr.map(|addr| addr.to_string());
+
+    if let Some(ref origin) = request_origin {
+        if !is_trusted_origin(origin) {
+            let body = serde_json::to_vec(&serde_json::json!({
+                "status": "forbidden",
+                "message": "Untrusted Origin rejected"
+            }))?;
+            let response = format!(
+                "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await?;
+            stream.write_all(&body).await?;
+            stream.shutdown().await?;
+            return Ok(());
+        }
+    }
 
     let _ = crate::diagnostic_log::append_diagnostic_log(
         "helper.request",
@@ -1914,13 +1983,16 @@ async fn handle_helper_connection(
             "remote_addr": remote_addr_text
         }),
     );
+    let cors_header = cors_origin_header(request_origin.as_deref());
     let response = if method == "OPTIONS" {
         format!(
-            "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            "HTTP/1.1 204 No Content\r\n{}Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            cors_header
         )
     } else {
         format!(
-            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\n{}Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            cors_header,
             body.len()
         )
     };
@@ -2424,8 +2496,11 @@ async fn handle_dictation_connection(
             )?,
         )
     };
+    let request_origin = header_value_from_headers(headers, "origin");
+    let cors_header = cors_origin_header(request_origin.as_deref());
     let response_headers = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, X-Codex-Plus-Dictation-Token\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\n{}Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, X-Codex-Plus-Dictation-Token\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        cors_header,
         response.len()
     );
     stream.write_all(response_headers.as_bytes()).await?;
@@ -2807,7 +2882,7 @@ async fn write_http_response(
     body: &[u8],
 ) -> anyhow::Result<()> {
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nAccess-Control-Allow-Origin: http://127.0.0.1\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     stream.write_all(response.as_bytes()).await?;
@@ -2821,7 +2896,7 @@ async fn write_http_stream_headers(
     content_type: &str,
 ) -> anyhow::Result<()> {
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nConnection: close\r\n\r\n"
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: http://127.0.0.1\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nConnection: close\r\n\r\n"
     );
     stream.write_all(response.as_bytes()).await?;
     Ok(())

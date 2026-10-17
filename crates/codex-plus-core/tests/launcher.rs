@@ -1041,6 +1041,53 @@ async fn default_helper_serves_backend_status_over_http() {
 }
 
 #[tokio::test]
+async fn default_helper_rejects_untrusted_origins() {
+    let hooks = DefaultLaunchHooks::default();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    hooks.start_helper(port).await.unwrap();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let response = client
+        .post(format!("http://127.0.0.1:{port}/backend/status"))
+        .header("origin", "https://evil.example.com")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+
+    hooks.shutdown_helper(port).await;
+}
+
+#[tokio::test]
+async fn default_helper_reflects_trusted_origins() {
+    let hooks = DefaultLaunchHooks::default();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    hooks.start_helper(port).await.unwrap();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let response = client
+        .post(format!("http://127.0.0.1:{port}/backend/status"))
+        .header("origin", "vscode-file://vscode-app")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let allow_origin = response
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(allow_origin, Some("vscode-file://vscode-app"));
+
+    hooks.shutdown_helper(port).await;
+}
+
+#[tokio::test]
 async fn default_helper_accepts_diagnostic_log_events_over_http() {
     let temp = tempfile::tempdir().unwrap();
     let log_path = temp.path().join("codex-plus.log");

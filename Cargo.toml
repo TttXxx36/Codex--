@@ -8,10 +8,10 @@ members = [
 ]
 
 [workspace.package]
-version = "1.9.0"
+version = "1.9.0-clean.1"
 edition = "2024"
 license = "AGPL-3.0-only"
-repository = "https://github.com/BigPizzaV3/CodexPlusPlus"
+repository = "https://github.com/TttXxx36/Codex--"
 
 [workspace.dependencies]
 aes-gcm = "0.10"

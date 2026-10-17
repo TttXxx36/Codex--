@@ -450,7 +450,6 @@
     if (tab === codexPlusExtensionsTab) return renderCodexPlusExtensionsNav();
     return [
       { key: "home", label: "主页" },
-      { key: "sponsor", label: "推荐内容" },
     ].map((item) => `
       <button type="button" class="codex-plus-page-nav-item" data-codex-plus-page-nav="${item.key}" data-active="${String(tab === item.key)}">${item.label}</button>
     `).join("");
@@ -495,7 +494,6 @@
   /** 页面标题：每个 rail 入口一个名字，和图标栏上的标签保持一致。 */
   function codexPlusPageTitle(tab) {
     if (tab === codexPlusExtensionsTab) return "拓展";
-    if (tab === codexPlusSponsorTab) return "推荐内容";
     return "Codex++";
   }
 
@@ -802,7 +800,6 @@
     [
       [codexPlusRailNavId, "home"],
       [codexPlusRailExtensionsId, "extensions"],
-      [codexPlusRailSponsorId, "sponsor"],
     ].forEach(([id, name]) => {
       const railButton = document.querySelector(`#${id} > button`);
       if (!railButton) return;
@@ -1640,9 +1637,8 @@
     openCodexPlusModal({ page: true, tab: codexPlusExtensionsTab });
   }
 
-  /** 「推荐内容」页面：从弹窗的二级 tab 提出来，成为图标栏上的一级入口。 */
   function openCodexPlusSponsor() {
-    openCodexPlusModal({ page: true, tab: codexPlusSponsorTab });
+    openCodexPlusModal({ page: true, tab: "home" });
   }
 
   function closeCodexPlusPage() {
@@ -1858,7 +1854,6 @@
     const specs = [
       { id: codexPlusRailNavId, label: "Codex++", iconMarkup: icons.home, withStatus: true, onActivate: openCodexPlusPage },
       { id: codexPlusRailExtensionsId, label: "拓展", iconMarkup: icons.extensions, withStatus: false, onActivate: openCodexPlusExtensions },
-      { id: codexPlusRailSponsorId, label: "推荐内容", iconMarkup: icons.sponsor, withStatus: false, onActivate: openCodexPlusSponsor },
     ];
 
     const anchor = codexPlusRailPrimaryAnchor(rail);

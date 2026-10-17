@@ -1060,7 +1060,6 @@ const routes: Array<{ id: Route; label: string; icon: LucideIcon; badge?: string
   { id: "dreamSkin", label: t("皮肤管理"), icon: Palette, tool: "codex" },
   { id: "userScripts", label: t("拓展"), icon: FileCode2, tool: "codex" },
   { id: "pluginMarket", label: t("Codex 插件市场"), icon: Store, tool: "codex" },
-  { id: "recommendations", label: t("推荐内容"), icon: ExternalLink },
   // 缓存清理覆盖多个 AI 应用，属于应用级页面，在各工具下均可访问。
   { id: "agentCache", label: t("AI Agent 缓存清理"), icon: Trash2 },
   { id: "maintenance", label: t("安装维护"), icon: Wrench, tool: "codex" },
@@ -1090,7 +1089,7 @@ const navigationSections: Array<{ label: string; routes: Route[]; placement?: "b
 ];
 
 /** 应用级入口放在最左栏；概览仍随当前 Agent 显示各自的状态。 */
-const globalNavigationRoutes: Route[] = ["recommendations", "agentCache", "about", "settings"];
+const globalNavigationRoutes: Route[] = ["agentCache", "about", "settings"];
 
 const defaultSettings: BackendSettings = {
   ...defaultWhaleBalanceSettings(),
@@ -7782,24 +7781,16 @@ function AboutScreen({
           <div className="metric-list">
             <Metric label={t("Codex++ 版本")} value={overview?.current_version ?? update?.currentVersion ?? "-"} />
             <Metric label={t("Codex 版本")} value={overview?.codex_version ?? t("未检测到")} />
-            <Metric label={t("项目地址")} value="github.com/BigPizzaV3/CodexPlusPlus" />
+            <Metric label={t("项目地址")} value="github.com/TttXxx36/Codex--" />
           </div>
           <Toolbar>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/BigPizzaV3/CodexPlusPlus")} variant="secondary">
+            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--")} variant="secondary">
               <ExternalLink className="h-4 w-4" />
               {t("打开项目主页")}
             </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://github.com/BigPizzaV3/CodexPlusPlus/issues")} variant="secondary">
+            <Button onClick={() => void actions.openExternalUrl("https://github.com/TttXxx36/Codex--/issues")} variant="secondary">
               <ExternalLink className="h-4 w-4" />
               {t("反馈问题")}
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://discord.gg/y96kX7A76v")} variant="secondary">
-              <MessageCircle className="h-4 w-4" />
-              Discord
-            </Button>
-            <Button onClick={() => void actions.openExternalUrl("https://t.me/CodexPlusPlus")} variant="secondary">
-              <MessageCircle className="h-4 w-4" />
-              Telegram
             </Button>
           </Toolbar>
         </CardContent>
