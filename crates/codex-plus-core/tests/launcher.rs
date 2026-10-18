@@ -199,7 +199,13 @@ fn app_paths_resolves_portable_current_link_to_directory_version() {
     std::fs::create_dir_all(&target).unwrap();
     std::fs::write(target.join("Codex.exe"), "").unwrap();
     std::fs::write(target.join("version"), "42.1.0\n").unwrap();
-    std::os::windows::fs::symlink_dir(&target, &current).unwrap();
+    if let Err(err) = std::os::windows::fs::symlink_dir(&target, &current) {
+        if err.raw_os_error() == Some(1314) {
+            eprintln!("Skipping symlink test: symlink creation requires Developer Mode or SeCreateSymbolicLinkPrivilege (error 1314)");
+            return;
+        }
+        panic!("unexpected symlink error: {:?}", err);
+    }
 
     assert_eq!(
         codex_app_version(&current).as_deref(),
@@ -1386,6 +1392,7 @@ async fn fixed_protocol_proxy_port_waits_for_the_previous_helper_to_release_it()
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,
@@ -1424,6 +1431,7 @@ async fn a_permanently_busy_protocol_proxy_port_reports_what_the_user_should_do(
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,
@@ -1468,6 +1476,7 @@ async fn a_persistently_forbidden_protocol_proxy_port_fails_after_the_wait_with_
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,
@@ -1532,6 +1541,7 @@ async fn a_transient_forbidden_protocol_proxy_port_retries_until_it_can_bind() {
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,
@@ -1575,6 +1585,7 @@ async fn an_unrelated_helper_bind_error_is_reported_as_is() {
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,
@@ -1620,6 +1631,7 @@ async fn a_busy_floating_helper_port_respects_the_platform_retry_budget() {
             debug_port: 9229,
             helper_port: 58123,
             status_store,
+            codex_home: Some(temp.path().join(".codex")),
             ..Default::default()
         },
         &hooks,

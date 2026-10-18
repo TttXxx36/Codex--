@@ -677,7 +677,10 @@ where
         let timeline = LaunchTimeline::new(options.status_store.clone());
         timeline.mark("start_native_browser_compatibility", 5);
         hooks.start_native_browser_compatibility(&settings).await;
-        let home = crate::relay_config::default_codex_home_dir();
+        let home = options
+            .codex_home
+            .clone()
+            .unwrap_or_else(crate::relay_config::default_codex_home_dir);
         timeline.mark("cleanup_unsupported_config", 10);
         hooks.cleanup_unsupported_config()?;
         crate::relay_config::ensure_windows_sandbox_usable_for_current_user(&home)?;
@@ -903,13 +906,6 @@ fn remote_control_provider_proxy_enabled(settings: &BackendSettings) -> bool {
     profile.relay_mode == crate::settings::RelayMode::Official && profile.official_mix_api_key
 }
 
-fn active_relay_profile_is_official_mix(settings: &BackendSettings) -> bool {
-    if !settings.relay_profiles_enabled {
-        return false;
-    }
-    let profile = settings.active_relay_profile();
-    profile.relay_mode == crate::settings::RelayMode::Official && profile.official_mix_api_key
-}
 #[cfg(windows)]
 fn apply_codexplusplus_window_icon_after_launch(process_id: u32) {
     let icon_resource_path =
@@ -3594,16 +3590,6 @@ async fn retry_injection(debug_port: u16, helper_port: u16) -> anyhow::Result<()
         }
     }
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Codex injection failed")))
-}
-
-async fn try_inject_isolated_quota_gate(debug_port: u16) -> anyhow::Result<()> {
-    let targets = crate::cdp::list_targets(debug_port).await?;
-    let target = crate::cdp::pick_injectable_codex_page_target(&targets)?;
-    let websocket_url = target
-        .web_socket_debugger_url
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("selected CDP target has no websocket URL"))?;
-    crate::bridge::install_isolated_api_quota_gate(websocket_url).await
 }
 
 pub async fn check_and_reinject_bridge(debug_port: u16, helper_port: u16) -> bool {

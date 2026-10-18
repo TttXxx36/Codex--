@@ -1,5 +1,3 @@
-<!-- 独立设计预览稿。确认采用前不替换 README.md；图片路径按仓库根目录组织。 -->
-
 <p align="center">
   <img src="docs/images/readme-preview/hero.svg" alt="Codex++ — 让 Codex 更顺手。供应商与模型、工作流增强、拓展与个性化。" width="100%">
 </p>
@@ -10,109 +8,31 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/BigPizzaV3/CodexPlusPlus/releases"><img src="https://img.shields.io/github/v/release/BigPizzaV3/CodexPlusPlus?style=flat-square&amp;color=7387ff&amp;label=release" alt="最新版本"></a>
-  <a href="https://github.com/BigPizzaV3/CodexPlusPlus/stargazers"><img src="https://img.shields.io/github/stars/BigPizzaV3/CodexPlusPlus?style=flat-square&amp;color=e8b86d" alt="GitHub Stars"></a>
+  <a href="https://github.com/TttXxx36/Codex--/releases"><img src="https://img.shields.io/github/v/release/TttXxx36/Codex--?style=flat-square&amp;color=7387ff&amp;label=release" alt="最新版本"></a>
+  <a href="https://github.com/TttXxx36/Codex--/stargazers"><img src="https://img.shields.io/github/stars/TttXxx36/Codex--?style=flat-square&amp;color=e8b86d" alt="GitHub Stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-838da8?style=flat-square" alt="许可证 AGPL-3.0-only"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-838da8?style=flat-square" alt="支持 Windows 和 macOS">
   <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri-838da8?style=flat-square" alt="使用 Rust 与 Tauri 构建">
 </p>
 
 <p align="center">
-  <a href="https://github.com/BigPizzaV3/CodexPlusPlus/releases"><strong>下载最新版 ↗</strong></a> &nbsp; · &nbsp;
+  <a href="https://github.com/TttXxx36/Codex--/releases"><strong>下载最新版 ↗</strong></a> &nbsp; · &nbsp;
   <a href="#快速上手">快速上手</a> &nbsp; · &nbsp;
   <a href="#功能一览">功能一览</a> &nbsp; · &nbsp;
-  <a href="https://github.com/BigPizzaV3/CodexPlusPlus/issues">反馈问题</a> &nbsp; · &nbsp;
+  <a href="https://github.com/TttXxx36/Codex--/issues">反馈问题</a> &nbsp; · &nbsp;
   <a href="README_EN.md">English</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/readme-preview/manager-enhancements.png" alt="Codex++ 管理工具：集中管理模型、会话、输入体验和挂件设置" width="100%">
+  <img src="docs/images/readme-preview/manager-enhancements.png" alt="Codex-- 管理工具：集中管理模型、会话、输入体验和挂件设置" width="100%">
   <br><sub>从供应商配置到界面增强，一个管理工具就够了。</sub>
 </p>
 
-Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理工具，通过 CDP 与本地辅助服务提供供应商切换、协议转换、会话管理和界面增强。它不修改官方应用的 `app.asar`，也不向安装目录写入补丁文件。
+Codex-- 是面向 OpenAI Codex / ChatGPT 桌面应用的纯净版统一管理应用。我们在上游基础上全面剔除商业赞助与外链推广，剥离离线大模型赘余，严格收敛网络回环与凭据脱敏，保持 0 广告、0 推广与隐私安全。通过 CDP 与本地服务提供供应商切换、协议转换、会话管理和界面增强。双击打开配置界面，再从界面启动官方应用。它不修改官方应用的 `app.asar`，也不向安装目录写入补丁文件。
 
-## 交流与支持
+## 问题反馈
 
-遇到问题请通过 [GitHub Issues](https://github.com/BigPizzaV3/CodexPlusPlus/issues) 提交，附上系统、Codex++ 版本、复现步骤与已脱敏的日志。欢迎分享拓展、主题和使用经验。
-
-<p align="center">
-  <a href="https://qm.qq.com/q/5h3pxpxg7S">QQ 交流 4 群 · 1127858981</a> &nbsp; · &nbsp;
-  <a href="https://t.me/CodexPlusPlus">Telegram 频道</a> &nbsp; · &nbsp;
-  <a href="https://linux.do">LINUX DO</a>
-</p>
-
-## 感谢赞助商
-
-感谢以下赞助商对项目的支持。服务范围、价格与活动以各平台官网说明为准。
-
-<p align="center">
-  <a href="https://jojocode.com/">
-    <img src="docs/images/readme-preview/jojo-banner-v3.png" alt="JOJO Code 赞助横幅" width="800">
-  </a>
-</p>
-
-<p align="center">
-  <a href="https://jojocode.com/"><strong>JOJO Code</strong></a><br>
-  JOJO Code 提供稳定、价格合理的 API 中转服务，支持 GPT-6.1、GPT-6、Fable 5.1、Claude Opus 5.5 等模型与图像能力，适合日常开发、团队协作和长期项目工作流。
-</p>
-
-<table>
-  <tr>
-    <th width="180">🏆 赞助商 🏆</th>
-    <th>介绍</th>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://jojocode.com/">
-        <img src="docs/images/readme-preview/jojo-banner-v3.png" alt="JOJO Code" height="80">
-      </a>
-    </td>
-    <td><a href="https://jojocode.com/"><strong>JOJO Code</strong></a><br>JOJO Code 提供稳定、价格合理的 API 中转服务，支持 GPT-6.1、GPT-6、Fable 5.1、Claude Opus 5.5 等模型与图像能力，适合日常开发、团队协作和长期项目工作流。</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://apikey.fun/register?aff=CODEX">
-        <img src="docs/images/sponsor-apikey-fun.png" alt="APIKEY.FUN" height="80">
-      </a>
-    </td>
-    <td><a href="https://apikey.fun/register?aff=CODEX"><strong>APIKEY.FUN</strong></a><br>感谢 APIKEY.FUN 赞助了本项目！APIKEY.FUN 是一家致力于提供开放、稳定、高性价比的全球主流大模型的 AI 中转站。平台支持 Claude、OpenAI、Gemini 等热门模型的 API 中转服务，价格低至官方原价的 7%。通过专属链接<a href="https://apikey.fun/register?aff=CODEX">注册 APIKEY</a>，可享受最高充值永久 95 折优惠。</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://grooroute.com/register?aff=2B3KJR5SRNTX">
-        <img src="docs/images/sponsor-grooroute.png" alt="GrooRoute" width="170">
-      </a>
-    </td>
-    <td><a href="https://grooroute.com/register?aff=2B3KJR5SRNTX"><strong>GrooRoute</strong></a><br>GrooRoute 提供 Claude 与 GPT 全系官方原模型，一行配置即可接入 Claude Code、Codex 或直接调用 API，官方承诺不掺假、永久保真。限时注册活动：充值 50 美元赠送 50 美元，通过<a href="https://grooroute.com/register?aff=2B3KJR5SRNTX">专属链接注册</a>并完成充值后，联系客服即可获取优惠。官网：<a href="https://grooroute.com/">grooroute.com</a>。</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://runapi.host/register?aff=AWJq">
-        <img src="docs/images/sponsor-runapi.png" alt="RunAPI" width="150">
-      </a>
-    </td>
-    <td><a href="https://runapi.host/register?aff=AWJq"><strong>RunAPI</strong></a><br>RunAPI 是高效稳定的 API 聚合平台，一个 API Key 即可访问 OpenAI、Claude、Gemini、DeepSeek、Grok 等 150+ 主流模型，低至 1 折，兼容 Claude Code、OpenClaw 等工具。</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://api.fenno.ai/s/ZZM7">
-        <img src="docs/images/sponsor-fenno-ai.png" alt="FennoAI" width="170">
-      </a>
-    </td>
-    <td><a href="https://api.fenno.ai/s/ZZM7"><strong>FennoAI</strong></a><br>FennoAI 是一家稳定、高效的 API 中转服务商，目前主要提供 Codex 中转服务，兼容 OpenAI 及 Anthropic 协议，可灵活接入 Codex、Claude Code、OpenCode 等主流编程工具，稳定支撑千亿 Token/日的企业级调用需求，支持国内及海外主体公对公结算、开票。通过<a href="https://api.fenno.ai/s/ZZM7">专属链接</a>购买订阅，仅需 1.99 美元即可获得价值 50 美元的 Coding Plan 额度；邀请好友购买最高可获得 20% 返佣。</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://s.qiniu.com/7zUJri">
-        <img src="docs/images/sponsor-qiniu-ai.png" alt="七牛云" width="170">
-      </a>
-    </td>
-    <td><a href="https://s.qiniu.com/7zUJri"><strong>七牛云</strong></a><br>感谢七牛云 AI 赞助本项目！七牛云 AI 是七牛云（02567.HK）旗下企业级大模型 MaaS 平台，可一站式调用全球 150 多个主流模型，兼容全球主流模型厂商协议，覆盖文本、图像、音频、视频、文件处理等全模态能力，服务超过 169 万企业及开发者用户。企业用户可免费领取 1200 万 Token，邀请好友最高可获得百亿 Token。</td>
-  </tr>
-</table>
-
-想支持项目或展示品牌？[联系维护者](mailto:1727532@qq.com)。
+遇到问题请通过 [GitHub Issues](https://github.com/TttXxx36/Codex--/issues) 提交，附上系统、Codex-- 版本、复现步骤与已脱敏的日志。
 
 ## 功能一览
 
@@ -143,8 +63,20 @@ Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理
       语音输入、粘贴修复、会话宽度、滚动位置恢复、下一步建议、回答大纲与光标打字特效。
     </td>
     <td valign="top">
-      <h3>🐳 用量可见，也有陪伴</h3>
+      <h3>🐳 用量可见，也有陪伴 · 开发预览</h3>
       用量挂件、可更换的桌宠角色、任务状态和预算提醒，搭配皮肤与自定义图片，让界面更有自己的风格。
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>📊 用量状态栏</h3>
+      在输入框下方实时显示生成速度、缓存命中率和上下文占用；数据取自本机 Codex 会话记录，上下文占比按 Codex 识别到的每模型窗口计算。默认开启，可在「Codex 增强 → 常用增强 → 用量状态栏」关闭。
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>🧵 Codex 多开</h3>
+      为每个供应商身份启动相互隔离的 Codex 实例：独立配置、会话和用户数据目录，可与其他单一供应商同时运行；运行中的实例集中列出，可单独重启或结束。
     </td>
   </tr>
 </table>
@@ -166,6 +98,22 @@ Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理
 
 </details>
 
+### 输入框下方，用量一目了然
+
+「用量状态栏」在输入框下方实时显示生成速度、缓存命中率和上下文占用，数据取自 Codex 自己写入的本机会话记录，口径与 Codex 一致：缓存命中为 `cached_input_tokens / input_tokens`，上下文占用为最近一次调用的 Token 与 Codex 识别到的每模型窗口之比——「每个模型，各有空间」配置的窗口会直接反映在这里。默认开启，可在管理器「Codex 增强 → 常用增强 → 用量状态栏」关闭；速度是相邻 Token 事件之间的吞吐估算，包含工具执行时间，读数会低于纯解码速度。
+
+<p align="center">
+  <img src="docs/images/usage-statusline.png" alt="输入框下方的用量状态栏：51 tok/s、缓存命中 99.9%、上下文占用 19%" width="100%">
+</p>
+
+### 同一台电脑，多个 Codex 互不打扰
+
+「Codex多开」为每个供应商身份启动相互隔离的 Codex 实例：每个实例使用独立的配置、会话和用户数据目录，可与其它单一 Responses / Chat Completions 供应商同时运行。运行中的主 Codex 与多开实例集中在列表里，可单独重启或结束，不影响彼此会话。
+
+<p align="center">
+  <img src="docs/images/codex-multi-launch.png" alt="Codex 多开：列出运行中的 DeepSeek 与 Zhipu GLM 实例，可单独重启或结束" width="100%">
+</p>
+
 ### 让拓展适应你的工作流
 
 从拓展市场发现社区脚本，为工作区添加用量面板、模型选择器、提示词优化等工具。你可以按需安装、启停，也可以编写自己的脚本。
@@ -181,7 +129,7 @@ Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理
 <table>
   <tr>
     <td width="42%" valign="top">
-      <strong>用量挂件与桌宠</strong><br>
+      <strong>用量挂件与桌宠 · 开发预览</strong><br>
       查看本地会话 Token 与任务状态，支持拖动、缩放和更换角色图片。
       <p><img src="docs/images/readme-preview/usage-widget.png" alt="角色用量挂件：气泡显示 Token 统计和运行状态" width="100%"></p>
     </td>
@@ -193,7 +141,7 @@ Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理
   </tr>
 </table>
 
-用量挂件默认关闭，可在「Codex 增强 → 常用增强 → 挂件与桌宠」开启。API 余额为可选能力，与会话 Token、订阅额度分别统计，详见 [用量挂件说明](docs/whale-widget.md)。角色素材归属见该文档的参考来源。
+用量挂件与桌宠目前处于开发预览阶段，截图来自开发版本；正式发布后的开启方式与统计口径将随版本说明提供。截图中的角色素材归属与使用声明见 [上游素材说明](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget)。
 
 ## 快速上手
 
@@ -204,25 +152,25 @@ Codex++ 是面向 OpenAI Codex / ChatGPT 桌面应用的外部启动器与管理
 | 你的设备 | 安装包 |
 | --- | --- |
 | Windows · x64 | `CodexPlusPlus-*-windows-x64-setup.exe` |
-| macOS · Apple Silicon | `CodexPlusPlus-*-macos-arm64.dmg` |
-| macOS · Intel | `CodexPlusPlus-*-macos-x64.dmg` |
+| macOS · Apple Silicon / Intel | `CodexPlusPlus-*-macos-universal.dmg` |
 
 Codex++ 配合官方桌面应用使用，首次启动前请确认本机已安装对应的 Codex / ChatGPT 应用。
 
-### 2. 打开管理工具，完成配置
+Codex 用量挂件可在「Codex 增强 → 常用增强 → 挂件与桌宠」开启，包含原版角色、模块化泡泡编辑器、音效与波形裁剪、角色/图库/音频资源管理、四边吸附及提醒。查看 Codex 会话与全机用量、订阅快照、配置单价后的本机费用估算，或通过供应商模板接入余额与额度。默认关闭，使用说明与统计口径见 [Codex 用量挂件](docs/whale-widget.md)，功能核对见 [完整功能验收](docs/whale-parity.md)。
 
-安装后有两个入口：
+**鲸鱼功能来源与鸣谢：**原始功能、完整界面引擎、鲸鱼角色及内置音效/动图来自 [MeteorNOX/DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget)，本项目将其适配为 Codex++ 内置功能；Codex 桌面版技术路线另参考 [Yang-huai406/Codex-Whale-Public](https://github.com/Yang-huai406/Codex-Whale-Public)。原始代码与素材声明见随项目保留的 [LICENSE](assets/inject/upstream/whale-widget/LICENSE) 和 [PROVENANCE.md](assets/inject/upstream/whale-widget/PROVENANCE.md)，素材不重新声明为本项目原创。
 
-| 入口 | 用来做什么 |
-| --- | --- |
-| **Codex++ 管理工具** | 检查应用路径与运行状态，配置供应商、模型和增强功能，管理更新与诊断。 |
-| **Codex++** | 静默启动官方桌面应用，并加载已保存的供应商与增强配置。 |
+### 2. 打开 Codex++，完成配置
 
-首次使用先打开 **Codex++ 管理工具**，确认应用路径，再选择供应商模式，按需开启增强功能并保存。
+安装后只有一个 **Codex++** 入口。Windows 提供桌面与开始菜单快捷方式，macOS 将 DMG 内的 **Codex++.app** 拖入「应用程序」。双击始终打开界面，可以检查应用路径与运行状态，配置供应商、模型和增强功能，管理更新与诊断。
 
-### 3. 从 Codex++ 入口开始工作
+首次使用先确认官方应用路径，再选择供应商模式，按需开启增强功能并保存。
 
-从 **Codex++** 启动桌面应用。依赖注入脚本的设置通常需要保存后重启 Codex++ 才会生效。
+**旧版 macOS 用户：**新发布的 DMG 会保留一个隐藏的兼容壳，让 v1.7.x 的旧更新器可以自动替换两个旧 app；更新后首次启动会自动将兼容壳移到 `~/.codex-session-delete/legacy-migrations`，Applications 中只保留 Codex++。v1.5/v1.6 的旧版本只会打开 DMG，请把其中可见的 **Codex++.app** 拖入「应用程序」替换一次；新版启动时同样会自动归档旧的 **Codex++ 管理工具.app**。原有配置与会话数据继续沿用。
+
+### 3. 在界面中启动 Codex
+
+在 **Codex++** 界面中点击「启动」，加载已保存的供应商与增强配置并打开官方桌面应用。依赖注入脚本的设置通常需要保存后，在界面中重启 Codex 才会生效。
 
 所有界面增强均可单独关闭；关闭增强总开关后，仍可使用供应商与启动管理能力。后续可在管理工具的「关于」页检查并启动更新。
 
@@ -235,9 +183,21 @@ Codex++ 配合官方桌面应用使用，首次启动前请确认本机已安装
 | **官方登录** | 使用 ChatGPT / Codex 官方账号。 |
 | **官方登录 + API** | 保留官方登录状态与插件入口，模型请求始终走配置的兼容 API。 |
 | **纯 API** | 使用自定义 Base URL / Key，无需官方账号。 |
-| **聚合供应商** | 在多个 API 供应商之间故障转移，或按会话、请求、权重轮转。 |
+| **聚合供应商** | 分「故障转移」与「模型聚合」两类：故障转移在多个供应商之间失败切换、按会话/请求/权重轮转；模型聚合按模型把请求固定到指定成员。成员既可以是 API 供应商，也可以是已登录的官方账号。 |
 
 官方登录 + API 模式下，模型请求不消耗官方额度；它没有「先用官方额度，耗尽再切 API」的行为。Chat Completions 供应商可通过本地代理转换为 Codex 使用的 Responses 协议。
+
+创建聚合供应商时先选择「故障转移」或「模型聚合」，两种类型的表单和运行方式彼此独立。模型聚合会把成员模型合并到 Codex 模型列表，带 `cpx-供应商ID/模型名` 前缀的条目固定发送到对应成员；故障转移则使用失败切换、轮转和权重策略。成员的模型列表、上下文窗口和自动压缩设置沿用各自供应商配置。
+
+成员可以是普通 API 供应商，也可以是完成 ChatGPT 登录的官方账号：代理会用该账号的 OAuth 凭据把请求发往 chatgpt.com 后端，access token 过期时自动用 refresh token 刷新并写回供应商快照，请求返回 401 时会强制刷新后重试一次。官方账号同时用于直连时，会优先采用 live auth.json 里的新凭据，避免 refresh token 轮换后失效。
+
+### 模型选择器：按供应商分组折叠
+
+模型聚合会把多个成员的模型合进同一份目录。原生模型选择器现在按供应商折叠成组：表头显示供应商名与模型数量，模型名不再重复「（供应商）」后缀，默认成员那一组带「默认」标志；右上角「全部展开 / 全部折叠」一键切换，折叠状态按供应商记忆。打开时若已选中某个模型，就只展开它所在的分组；没有选中时展开默认供应商；单供应商（直连供应商）保持原生列表不动。
+
+<p align="center">
+  <img src="docs/images/readme-preview/model-picker-groups.png" alt="模型选择器按供应商分组折叠：供应商 4 组（默认，7 个模型）与 DeepSeek 组（2 个模型）" width="560">
+</p>
 
 ### 给每个模型设置自己的上下文窗口
 
@@ -258,7 +218,7 @@ another-model[128000]
 <details>
   <summary><strong>启动后，为什么没有 Codex++ 菜单？</strong></summary>
 
-确认从 **Codex++** 入口启动。打开管理工具的「安装维护」与「关于」页面，检查应用路径、启动状态和诊断日志。
+确认在 **Codex++** 界面中点击「启动」打开官方应用。打开「安装维护」与「关于」页面，检查应用路径、启动状态和诊断日志。
 
 </details>
 
@@ -348,3 +308,4 @@ cargo build --release
 </p>
 
 CodexPlusPlus 的修改与分发、通过网络提供修改后版本的源代码义务，以 [GNU AGPL v3.0](LICENSE) 为准。许可证覆盖本项目自身代码，第三方素材遵循各自声明；不授予 OpenAI、ChatGPT、Codex 商标或应用资源的权利。
+
